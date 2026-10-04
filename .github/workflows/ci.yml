@@ -48,3 +48,21 @@ jobs:
           go-version-file: go.mod
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  fuzz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Fuzz the parsers of untrusted disc data (30 s each)
+        run: |
+          go test ./internal/carve -run '^$' -fuzz '^FuzzScan$' -fuzztime 30s
+          go test ./internal/carve -run '^$' -fuzz '^FuzzParseSCR$' -fuzztime 30s
+          go test ./internal/dvdifo -run '^$' -fuzz '^FuzzParse$' -fuzztime 30s
+          go test ./internal/discinfo -run '^$' -fuzz '^FuzzParseMediaInfo$' -fuzztime 30s
+          go test ./internal/library -run '^$' -fuzz '^FuzzSanitize$' -fuzztime 30s
