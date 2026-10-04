@@ -86,21 +86,26 @@ say "Checking the system"
 [ "$(uname -m)" = x86_64 ] || die "x86_64 (x64) only; this is $(uname -m)"
 [ -d /run/systemd/system ] || die "systemd is required"
 command -v apt-get >/dev/null || die "Only apt-based distros (Debian 12+, Ubuntu 22.04+) are supported in v1"
-. /etc/os-release
-supported=0
-case "${ID:-}" in
-  debian) [ "${VERSION_ID%%.*}" -ge 12 ] 2>/dev/null && supported=1 ;;
-  *)
-    if [ "${ID:-}" = ubuntu ] || [[ " ${ID_LIKE:-} " == *" ubuntu "* ]]; then
-      case "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}" in
-        jammy|noble|oracular|plucky|questing|resolute) supported=1 ;;
-      esac
-    elif [[ " ${ID_LIKE:-} " == *" debian "* ]]; then
-      case "${DEBIAN_CODENAME:-${VERSION_CODENAME:-}}" in bookworm|trixie|forky) supported=1 ;; esac
-    fi ;;
-esac
-[ "$supported" = 1 ] || die "${PRETTY_NAME:-This distro} isn't supported; need Debian 12+ or Ubuntu 22.04+"
-echo "    ${PRETTY_NAME}"
+# Read os-release in a subshell: it defines VERSION, ID and friends, which
+# would otherwise clobber this script's variables.
+os_check() {
+  . /etc/os-release
+  case "${ID:-}" in
+    debian) [ "${VERSION_ID%%.*}" -ge 12 ] 2>/dev/null && return 0 ;;
+    *)
+      if [ "${ID:-}" = ubuntu ] || [[ " ${ID_LIKE:-} " == *" ubuntu "* ]]; then
+        case "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}" in
+          jammy|noble|oracular|plucky|questing|resolute) return 0 ;;
+        esac
+      elif [[ " ${ID_LIKE:-} " == *" debian "* ]]; then
+        case "${DEBIAN_CODENAME:-${VERSION_CODENAME:-}}" in bookworm|trixie|forky) return 0 ;; esac
+      fi ;;
+  esac
+  return 1
+}
+PRETTY=$( . /etc/os-release; echo "${PRETTY_NAME:-this distro}")
+( os_check ) || die "$PRETTY isn't supported; need Debian 12+ or Ubuntu 22.04+"
+echo "    $PRETTY"
 
 # ---------------------------------------------------------------- 2. packages
 say "Installing tools from the distro"
