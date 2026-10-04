@@ -1,0 +1,4 @@
+testdata/gen/
+dist/
+/camdvd
+*.img
