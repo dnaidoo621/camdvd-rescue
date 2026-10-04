@@ -1,0 +1,36 @@
+# Installed by install.sh; @LIBRARY@ and @PROTECT_HOME@ are filled in there.
+[Unit]
+Description=CamDVD Rescue (camcorder DVD archiver)
+Documentation=https://github.com/dnaidoo621/camdvd-rescue
+After=network-online.target local-fs.target remote-fs.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=camdvd
+Group=camdvd
+SupplementaryGroups=cdrom @EXTRA_GROUPS@
+EnvironmentFile=-/etc/camdvd/env
+ExecStart=/opt/camdvd/current/camdvd serve -config /etc/camdvd/config.toml
+Restart=on-failure
+RestartSec=5
+UMask=0002
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=@PROTECT_HOME@
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ReadWritePaths=/var/lib/camdvd @LIBRARY@
+# Raw SCSI reads and eject need the optical devices; nothing else.
+DevicePolicy=closed
+DeviceAllow=block-sr rw
+DeviceAllow=char-sg rw
+DeviceAllow=char-drm rw
+
+[Install]
+WantedBy=multi-user.target

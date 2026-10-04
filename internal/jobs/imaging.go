@@ -48,7 +48,7 @@ func (e *Engine) startNew(ctx context.Context, dc *driveCtl, probe discinfo.Prob
 	dec, method, ok := discinfo.PreClassify(probe)
 	if !ok {
 		e.notice(dc, dec.Reason+". Ejecting.")
-		_ = dc.d.Eject(ctx)
+		_ = e.eject(dc)
 		return
 	}
 	fp, err := drive.Fingerprint(ctx, dc.d, probe)
@@ -106,12 +106,12 @@ func (e *Engine) continueHolder(ctx context.Context, dc *driveCtl, d *store.Disc
 		_, method, ok := discinfo.PreClassify(probe)
 		if !ok {
 			e.notice(dc, "That side reads as blank or unsupported. Insert side B of the same disc, or press Cancel.")
-			_ = dc.d.Eject(ctx)
+			_ = e.eject(dc)
 			return
 		}
 		if a := d.Side("A"); a != nil && a.Fingerprint == fp {
 			e.notice(dc, "This looks like side A again, flip it over.")
-			_ = dc.d.Eject(ctx)
+			_ = e.eject(dc)
 			return
 		}
 		e.notice(dc, "")
@@ -139,7 +139,7 @@ func (e *Engine) continueHolder(ctx context.Context, dc *driveCtl, d *store.Disc
 		}
 		if s.Fingerprint != fp {
 			e.notice(dc, fmt.Sprintf("This isn't the disc job %s is waiting for. Insert that disc, or cancel the job to free the drive.", d.ID))
-			_ = dc.d.Eject(ctx)
+			_ = e.eject(dc)
 			return
 		}
 		e.notice(dc, "")
@@ -209,7 +209,7 @@ func (e *Engine) imageSide(dc *driveCtl, id, letter string) {
 	case err != nil:
 		e.endStage(id, letter, stageIdx, "failed", res.CmdLines, res.Stderr, err.Error())
 		e.fail(id, fmt.Sprintf("Imaging side %s failed: %v", letter, err))
-		_ = dc.d.Eject(e.ctx)
+		_ = e.eject(dc)
 		e.setHolder(dc, "")
 		return
 	}
@@ -264,11 +264,11 @@ func (e *Engine) afterImaged(ctx context.Context, dc *driveCtl, id, letter strin
 				d.State, d.Message = store.AwaitingFlip, "Flip the disc and insert side B"
 				return nil
 			})
-			_ = dc.d.Eject(e.ctx)
+			_ = e.eject(dc)
 			return
 		}
 	}
-	_ = dc.d.Eject(e.ctx)
+	_ = e.eject(dc)
 	e.setHolder(dc, "")
 	_, _ = e.update(id, func(d *store.Disc) error {
 		if d.State.HoldsDrive() {

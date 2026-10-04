@@ -1,0 +1,23 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  bundle:
+    runs-on: ubuntu-22.04 # oldest supported glibc for dvd-vr
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq build-essential xz-utils
+      - run: scripts/build-release.sh "${GITHUB_REF_NAME}"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/camdvd-*-linux-x64.tar.gz
+            dist/camdvd-*-linux-x64.tar.gz.sha256
+            install.sh
+          generate_release_notes: true

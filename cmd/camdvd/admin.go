@@ -80,6 +80,7 @@ func update(args []string) error {
 	fs := flag.NewFlagSet("update", flag.ExitOnError)
 	want := fs.String("version", "", "release tag to install (default: latest)")
 	force := fs.Bool("force", false, "update even with unfinished jobs")
+	bundle := fs.String("bundle", "", "install a local camdvd-*.tar.gz instead of downloading")
 	_ = fs.Parse(args)
 	if err := needRoot(); err != nil {
 		return err
@@ -95,7 +96,12 @@ func update(args []string) error {
 	}
 
 	tag := *want
-	if tag == "" {
+	if *bundle != "" {
+		tag, err = bundleVersion(*bundle)
+		if err != nil {
+			return err
+		}
+	} else if tag == "" {
 		tag, err = latestTag()
 		if err != nil {
 			return err
@@ -124,7 +130,12 @@ func update(args []string) error {
 	}
 
 	dest := filepath.Join(optDir, tag)
-	if err := fetchRelease(tag, dest); err != nil {
+	if *bundle != "" {
+		err = unpackLocal(*bundle, dest)
+	} else {
+		err = fetchRelease(tag, dest)
+	}
+	if err != nil {
 		return err
 	}
 	if err := switchTo(tag); err != nil {
@@ -192,6 +203,61 @@ func uninstall(args []string) error {
 	cmd := exec.Command("bash", append([]string{script, "--uninstall"}, args...)...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
+}
+
+// bundleVersion reads VERSION from a bundle without unpacking it.
+func bundleVersion(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return "", err
+	}
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			return "", fmt.Errorf("%s has no VERSION file", path)
+		}
+		if filepath.Base(hdr.Name) == "VERSION" {
+			b, _ := io.ReadAll(tr)
+			return strings.TrimSpace(string(b)), nil
+		}
+	}
+}
+
+// unpackLocal verifies a local bundle against its .sha256 when present.
+func unpackLocal(path, dest string) error {
+	if sum, err := os.ReadFile(path + ".sha256"); err == nil {
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		h := sha256.New()
+		_, err = io.Copy(h, f)
+		f.Close()
+		if err != nil {
+			return err
+		}
+		if want := strings.Fields(string(sum)); len(want) == 0 || want[0] != hex.EncodeToString(h.Sum(nil)) {
+			return errors.New("checksum mismatch; bundle refused")
+		}
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	stage := dest + ".partial"
+	_ = os.RemoveAll(stage)
+	if err := untar(f, stage); err != nil {
+		return err
+	}
+	_ = os.RemoveAll(dest)
+	return os.Rename(stage, dest)
 }
 
 func switchTo(tag string) error {

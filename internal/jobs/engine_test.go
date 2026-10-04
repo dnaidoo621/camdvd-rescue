@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -332,5 +333,98 @@ func TestLibraryRenameUndoAndRescan(t *testing.T) {
 	c2, _ := h.e.St.Clip(clips[1].ID)
 	if d.Folder != "Durban 2004" || c2.Output != filepath.Join("Durban 2004", "best bit.mp4") {
 		t.Errorf("after rescan folder %q clip %q", d.Folder, c2.Output)
+	}
+}
+
+func TestDataDiscCopiesFiles(t *testing.T) {
+	h := newHarness(t)
+	set := h.e.Settings()
+	set.Batch, set.BatchSides, set.BatchDesc = true, 1, "Tax papers"
+	h.e.SaveSettings(set)
+	h.im.Insert("data.img")
+	h.waitFor("job", func() bool { return h.only() != nil })
+	id := h.only().ID
+	h.waitFor("done", func() bool { return h.state(id) == store.Done })
+	d, _ := h.e.St.Disc(id)
+	if d.Side("A").Decision.Class != "data" {
+		t.Errorf("class %s", d.Side("A").Decision.Class)
+	}
+	if b, err := os.ReadFile(filepath.Join(h.lib, "Tax papers", "Documents", "tax.txt")); err != nil || !strings.Contains(string(b), "tax 2004") {
+		t.Errorf("copied file: %q %v", b, err)
+	}
+}
+
+func TestAddAnotherSide(t *testing.T) {
+	h := newHarness(t)
+	set := h.e.Settings()
+	set.Batch, set.BatchSides, set.BatchDesc = true, 1, "Picnic"
+	h.e.SaveSettings(set)
+	h.im.Insert("unfinalized-a.img")
+	h.waitFor("job", func() bool { return h.only() != nil })
+	id := h.only().ID
+	h.waitFor("done", func() bool { return h.state(id) == store.Done })
+	h.waitFor("ejected", func() bool { return h.im.Current() == "" })
+	if err := h.e.AddSide(id); err != nil {
+		t.Fatal(err)
+	}
+	if h.state(id) != store.AwaitingFlip {
+		t.Fatalf("state %s", h.state(id))
+	}
+	h.im.Insert("unfinalized-b.img")
+	h.waitFor("done again", func() bool {
+		d, _ := h.e.St.Disc(id)
+		return d.State == store.Done && len(d.Sides) == 2
+	})
+	files := h.files("Picnic")
+	if len(files) != 5 || files[3] != "Picnic - B01.mp4" {
+		t.Errorf("files %v", files)
+	}
+}
+
+// slowImage makes a large unfinalized image so imaging takes long enough
+// to pull the disc out halfway.
+func slowImage(t *testing.T) string {
+	dir := t.TempDir()
+	src, _ := filepath.Abs(filepath.Join("..", "..", "testdata", "gen", "unfinalized-a.img"))
+	b, _ := os.ReadFile(src)
+	p := filepath.Join(dir, "big.img")
+	f, _ := os.Create(p)
+	for range 40 { // ~1.1 GB of repeated recordings
+		f.Write(b)
+	}
+	fi, _ := f.Stat()
+	f.Close()
+	os.WriteFile(p+".media.json", []byte(fmt.Sprintf(`{"type":"DVD-R Sequential","disc_status":"appendable","session_state":"incomplete","next_writable":%d}`, fi.Size()/2048)), 0o644)
+	return p
+}
+
+func TestDiscRemovedMidReadResumes(t *testing.T) {
+	h := newHarness(t)
+	img := slowImage(t)
+	h.im.Insert(img)
+	h.waitFor("job", func() bool { return h.only() != nil })
+	id := h.only().ID
+	h.waitFor("some progress", func() bool {
+		d, _ := h.e.St.Disc(id)
+		return d != nil && d.Side("A").ImageDone > 0.05
+	})
+	h.im.Eject(context.Background())
+	h.waitFor("paused", func() bool { return h.state(id) == store.Paused })
+	d, _ := h.e.St.Disc(id)
+	if !strings.Contains(d.Message, "removed") {
+		t.Errorf("message %q", d.Message)
+	}
+	h.im.Insert(img)
+	h.waitFor("resumed imaging", func() bool { s := h.state(id); return s == store.ImagingA || s == store.AwaitingAnswer })
+	h.e.Cancel(id) // converting 120 copies of each clip would take a while
+	stages := 0
+	d, _ = h.e.St.Disc(id)
+	for _, s := range d.Side("A").Stages {
+		if s.Name == "image" {
+			stages++
+		}
+	}
+	if stages != 2 {
+		t.Errorf("image stages %d, want 2 (interrupted + resumed)", stages)
 	}
 }

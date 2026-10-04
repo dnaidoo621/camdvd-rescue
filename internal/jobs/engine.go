@@ -54,6 +54,9 @@ type driveCtl struct {
 	holder string // disc id that owns the drive
 	busy   bool   // probing or imaging right now
 	notice string
+	// ejected is set when the app ejects: the next "disc present" is a new
+	// insert even if the watcher never saw the tray empty in between.
+	ejected bool
 }
 
 // DriveState is a drive as the UI sees it.
@@ -206,10 +209,10 @@ func (e *Engine) Drives() []DriveState {
 	for _, dc := range e.drives {
 		dc.mu.Lock()
 		ds := DriveState{Info: dc.d.Info(), Status: dc.status.String(), Holder: dc.holder, Busy: dc.busy, Notice: dc.notice}
-		dc.mu.Unlock()
 		if dc.status < 0 {
 			ds.Status = "starting"
 		}
+		dc.mu.Unlock()
 		if im, ok := dc.d.(*drive.ImageDrive); ok {
 			ds.Images = im.Images()
 			ds.Current = filepath.Base(im.Current())
@@ -239,6 +242,17 @@ func (e *Engine) notice(dc *driveCtl, msg string) {
 		e.Hub.Publish("notice", msg)
 	}
 	e.Hub.Publish("drives", "")
+}
+
+// eject opens the tray and marks the next disc as a fresh insert.
+func (e *Engine) eject(dc *driveCtl) error {
+	err := dc.d.Eject(e.ctx)
+	if err == nil {
+		dc.mu.Lock()
+		dc.ejected = true
+		dc.mu.Unlock()
+	}
+	return err
 }
 
 func (e *Engine) setHolder(dc *driveCtl, id string) {
@@ -283,11 +297,15 @@ func (e *Engine) watch(ctx context.Context, dc *driveCtl) {
 		dc.mu.Lock()
 		prev := dc.status
 		dc.status = st
+		fresh := st == drive.StatusDiscOK && (prev != drive.StatusDiscOK || dc.ejected) && !dc.busy
+		if fresh || st != drive.StatusDiscOK {
+			dc.ejected = false
+		}
 		dc.mu.Unlock()
 		if prev != st {
 			e.Hub.Publish("drives", "")
 		}
-		if st == drive.StatusDiscOK && prev != drive.StatusDiscOK {
+		if fresh {
 			if dc.tryBusy() {
 				e.wg.Add(1)
 				go func() {

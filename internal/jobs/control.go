@@ -130,7 +130,7 @@ func (e *Engine) Cancel(id string) error {
 	e.cancelWork(id)
 	if dc := e.driveFor(d.DriveID); dc != nil && e.holder(dc) == id {
 		e.setHolder(dc, "")
-		_ = dc.d.Eject(e.ctx)
+		_ = e.eject(dc)
 	}
 	return nil
 }
@@ -301,7 +301,7 @@ func (e *Engine) AddSide(id string) error {
 	if err != nil {
 		return err
 	}
-	_ = dc.d.Eject(e.ctx)
+	_ = e.eject(dc)
 	return nil
 }
 
@@ -316,7 +316,7 @@ func (e *Engine) Eject(driveID string) error {
 			return fmt.Errorf("%w: job %s is reading the disc; cancel it first", ErrBusy, h)
 		}
 	}
-	return dc.d.Eject(e.ctx)
+	return e.eject(dc)
 }
 
 // Insert loads an image into a demo drive.

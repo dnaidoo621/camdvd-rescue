@@ -1,0 +1,27 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Media tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dvdauthor genisoimage 7zip libimage-exiftool-perl gddrescue sg3-utils dvd+rw-tools lsscsi
+          . scripts/versions.env
+          curl -fsSL -o /tmp/ff.tar.xz "https://github.com/BtbN/FFmpeg-Builds/releases/download/$FFMPEG_TAG/$FFMPEG_ASSET"
+          echo "$FFMPEG_SHA256  /tmp/ff.tar.xz" | sha256sum -c -
+          mkdir -p /tmp/ff && tar -xJf /tmp/ff.tar.xz -C /tmp/ff --strip-components=1
+          echo "CAMDVD_BIN=/tmp/ff/bin" >> "$GITHUB_ENV"
+      - name: Synthetic disc images
+        run: FFMPEG=/tmp/ff/bin/ffmpeg scripts/make-test-images.sh
+      - run: go vet ./...
+      - run: test -z "$(gofmt -l .)"
+      - run: go test -race ./...

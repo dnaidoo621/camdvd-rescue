@@ -1,0 +1,3 @@
+# Installed by install.sh. Keeps desktops from automounting camcorder discs
+# or opening a player, so CamDVD Rescue has the drive to itself.
+# One line per configured drive follows.
