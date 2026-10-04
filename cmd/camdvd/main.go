@@ -250,7 +250,7 @@ func rip(args []string) error {
 	}
 	if im, ok := d.(*drive.ImageDrive); ok {
 		abs, _ := filepath.Abs(*image)
-		if err := im.Insert(abs); err != nil {
+		if err := im.InsertPath(abs); err != nil {
 			return err
 		}
 	} else {

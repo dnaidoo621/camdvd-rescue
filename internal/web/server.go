@@ -216,9 +216,12 @@ const cookieName = "camdvd_session"
 
 func (s *Server) passwordOn() bool { return s.E.Cfg.Password != "" }
 
+// sign makes a session token. The password is part of the HMAC key, so
+// changing CAMDVD_PASSWORD invalidates every existing session.
 func (s *Server) sign(exp int64) string {
-	m := hmac.New(sha256.New, s.secret)
-	fmt.Fprintf(m, "%d|%x", exp, sha256.Sum256([]byte(s.E.Cfg.Password)))
+	key := append(append([]byte{}, s.secret...), s.E.Cfg.Password...)
+	m := hmac.New(sha256.New, key)
+	fmt.Fprintf(m, "camdvd-session|%d", exp)
 	return strconv.FormatInt(exp, 10) + "." + hex.EncodeToString(m.Sum(nil))
 }
 
@@ -290,16 +293,35 @@ func (s *Server) doLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	exp := time.Now().Add(30 * 24 * time.Hour).Unix()
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: s.sign(exp), Path: "/", HttpOnly: true,
-		SameSite: http.SameSiteStrictMode, Expires: time.Unix(exp, 0)})
-	next := r.FormValue("next")
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
-		next = "/"
+		Secure: overTLS(r), SameSite: http.SameSiteStrictMode, Expires: time.Unix(exp, 0)})
+	http.Redirect(w, r, localRedirect(r.FormValue("next")), http.StatusSeeOther)
+}
+
+// localRedirect returns next if it's a path on this site, else "/". It
+// refuses scheme-relative ("//host") and backslash ("/\host") forms, which
+// browsers treat as other hosts.
+func localRedirect(next string) string {
+	if next == "" || next[0] != '/' || (len(next) > 1 && (next[1] == '/' || next[1] == '\\')) ||
+		strings.ContainsAny(next, "\\\r\n") {
+		return "/"
 	}
-	http.Redirect(w, r, next, http.StatusSeeOther)
+	u, err := url.Parse(next)
+	if err != nil || u.IsAbs() || u.Host != "" || strings.HasPrefix(u.Path, "//") {
+		return "/"
+	}
+	return u.RequestURI()
+}
+
+// overTLS reports whether the browser reached us over HTTPS, directly or
+// through a reverse proxy. The cookie is Secure only then: on a plain-HTTP
+// LAN, the default, a Secure cookie would never be sent back.
+func overTLS(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 func (s *Server) doLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		Secure: overTLS(r), SameSite: http.SameSiteStrictMode})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
