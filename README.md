@@ -1,5 +1,9 @@
 # CamDVD Rescue
 
+[![ci](https://github.com/dnaidoo621/camdvd-rescue/actions/workflows/ci.yml/badge.svg)](https://github.com/dnaidoo621/camdvd-rescue/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/dnaidoo621/camdvd-rescue/badge)](https://scorecard.dev/viewer/?uri=github.com/dnaidoo621/camdvd-rescue)
+[![Release](https://img.shields.io/github/v/release/dnaidoo621/camdvd-rescue)](https://github.com/dnaidoo621/camdvd-rescue/releases/latest)
+
 Turns a stack of 8 cm camcorder DVDs into folders of MP4s that land in iCloud
 Photos on the right date, with one disc insert and two optional answers per
 disc. It runs on a Linux x64 machine with a DVD drive and is driven from any
@@ -96,6 +100,7 @@ test box and runs a command there.
 - [M0 decision table](docs/m0-decisions.md): what's settled and what needs
   real discs
 - [Changelog](CHANGELOG.md) · [Third-party software](THIRD_PARTY.md)
+- [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md)
 
 ## Licence
 
