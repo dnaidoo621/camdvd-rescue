@@ -101,7 +101,7 @@ func Verify(ctx context.Context, ts tools.Set, s Source, in Info) (problem strin
 		args = append(args, s.InputArgs()...)
 		args = append(args, "-map", "0:v:0", "-t", "2", "-f", "null", "-")
 		r, err := ts.Run(ctx, tools.Cmd{Name: "ffmpeg", Args: args})
-		return err == nil, strings.TrimSpace(r.Stderr)
+		return err == nil, decodeErrors(r.Stderr)
 	}
 	ok, errs := decode(0)
 	if !ok {
@@ -122,6 +122,21 @@ func Verify(ctx context.Context, ts tools.Set, s Source, in Info) (problem strin
 		warnings = append(warnings, fmt.Sprintf("%d unreadable sectors were zero-filled inside this clip", s.BadSectors))
 	}
 	return "", warnings
+}
+
+// decodeErrors drops libdvdread/libdvdnav chatter, which they log at error
+// level when reading a VIDEO_TS folder rather than a device ("Couldn't find
+// device name"), and keeps real decode errors.
+func decodeErrors(stderr string) string {
+	var keep []string
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.Contains(line, "libdvdread:") || strings.Contains(line, "libdvdnav:") || strings.HasPrefix(line, "Last message repeated") {
+			continue
+		}
+		keep = append(keep, line)
+	}
+	return strings.Join(keep, "\n")
 }
 
 func firstLine(s string) string {

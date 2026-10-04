@@ -14,6 +14,16 @@ browser on the network.
 - Bulk rename with live preview, conflict checks and one-click undo.
 - Reads discs, never writes them.
 
+| The two questions, asked while side A is read | A finished disc, dated and tagged for Photos |
+| --- | --- |
+| ![Answer card](docs/images/answer-card.jpg) | ![Library folder](docs/images/library-folder.jpg) |
+| **Library**, with what's still to import into Photos | **Bulk rename** with live preview and undo |
+| ![Library](docs/images/library.jpg) | ![Bulk rename](docs/images/bulk-rename.jpg) |
+
+> **Status: v0.1** — every pipeline path is tested against synthetic disc
+> images, and install/update/rollback on real hardware, but not yet against
+> real camcorder discs. See [docs/m0-decisions.md](docs/m0-decisions.md).
+
 ## Install
 
 On Debian 12+ or Ubuntu 22.04+ (x64, systemd):
@@ -72,6 +82,22 @@ go run ./cmd/camdvd serve -config dev.toml -demo testdata/gen   # adds an image 
 scripts/build-release.sh 1.0.0         # release bundle in dist/
 ```
 
-`scripts/htpc.sh <cmd>` syncs the tree to a Linux test box and runs a
-command there. See `docs/spec.md` for the design and `docs/m0-decisions.md`
-for what still needs checking against real discs.
+`CAMDVD_HOST=user@box scripts/remote.sh <cmd>` syncs the tree to a Linux
+test box and runs a command there.
+
+## Documentation
+
+- [User guide](docs/user-guide.md): install, ripping, the library, dates and
+  iCloud, bulk rename, settings, troubleshooting
+- [Architecture](docs/architecture.md): packages, state machine, imaging,
+  carving, files on disk, security
+- [HTTP API](docs/api.md)
+- [Spec and implementation plan](docs/spec.md)
+- [M0 decision table](docs/m0-decisions.md): what's settled and what needs
+  real discs
+- [Changelog](CHANGELOG.md) · [Third-party software](THIRD_PARTY.md)
+
+## Licence
+
+MIT. The bundled FFmpeg and dvd-vr are separate GPL programs; see
+[THIRD_PARTY.md](THIRD_PARTY.md).

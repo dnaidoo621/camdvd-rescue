@@ -140,8 +140,8 @@ func TestFinalizedEndToEnd(t *testing.T) {
 		if !in.HasVideo || in.Duration < 3 || in.Duration > 5.5 {
 			t.Errorf("%s: %+v", s.Label, in)
 		}
-		if p, _ := Verify(ctx, ts, s, in); p != "" {
-			t.Errorf("%s: %s", s.Label, p)
+		if p, w := Verify(ctx, ts, s, in); p != "" || len(w) > 0 {
+			t.Errorf("%s: problem %q warnings %q", s.Label, p, w)
 		}
 		if i == 2 { // rec3 is 16:9 interlaced
 			if !in.Interlaced() || in.DAR != "16:9" {
