@@ -401,7 +401,7 @@ func slowImage(t *testing.T) string {
 func TestDiscRemovedMidReadResumes(t *testing.T) {
 	h := newHarness(t)
 	img := slowImage(t)
-	h.im.Insert(img)
+	h.im.InsertPath(img)
 	h.waitFor("job", func() bool { return h.only() != nil })
 	id := h.only().ID
 	h.waitFor("some progress", func() bool {
@@ -414,7 +414,7 @@ func TestDiscRemovedMidReadResumes(t *testing.T) {
 	if !strings.Contains(d.Message, "removed") {
 		t.Errorf("message %q", d.Message)
 	}
-	h.im.Insert(img)
+	h.im.InsertPath(img)
 	h.waitFor("resumed imaging", func() bool { s := h.state(id); return s == store.ImagingA || s == store.AwaitingAnswer })
 	h.e.Cancel(id) // converting 120 copies of each clip would take a while
 	stages := 0

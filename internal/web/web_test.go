@@ -151,3 +151,36 @@ func TestAPIErrors(t *testing.T) {
 		t.Errorf("bad sides: %d", resp.StatusCode)
 	}
 }
+
+func TestLocalRedirect(t *testing.T) {
+	cases := map[string]string{
+		"/library":             "/library",
+		"/jobs/d-1?detail=1":   "/jobs/d-1?detail=1",
+		"":                     "/",
+		"https://evil.example": "/",
+		"//evil.example":       "/",
+		"/\\evil.example":      "/",
+		"/%2F%2Fevil.example":  "/",
+		"library":              "/",
+		"/a\r\nSet-Cookie: x":  "/",
+	}
+	for in, want := range cases {
+		if got := localRedirect(in); got != want {
+			t.Errorf("localRedirect(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestDemoInsertRefusesPaths(t *testing.T) {
+	srv, _ := newServer(t, "")
+	for _, img := range []string{"/etc/passwd", "../../etc/passwd", "nope.img"} {
+		resp, err := srv.Client().Post(srv.URL+"/api/drives/demo/insert", "application/json", strings.NewReader(`{"image":"`+img+`"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode == 200 {
+			t.Errorf("insert %q accepted", img)
+		}
+	}
+}

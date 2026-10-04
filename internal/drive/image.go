@@ -47,15 +47,27 @@ func (d *ImageDrive) Images() []string {
 	return m
 }
 
-// Insert loads an image, by name within dir or by absolute path.
+// Insert loads one of Images() by name. It never takes a path, so a request
+// can't make the drive read an arbitrary file.
 func (d *ImageDrive) Insert(name string) error {
-	p := name
-	if !filepath.IsAbs(p) {
-		if strings.Contains(name, "/") || strings.HasPrefix(name, ".") {
-			return fmt.Errorf("bad image name %q", name)
+	for _, n := range d.Images() {
+		if n == name {
+			return d.load(filepath.Join(d.dir, n))
 		}
-		p = filepath.Join(d.dir, name)
 	}
+	return fmt.Errorf("no image %q in %s", name, d.dir)
+}
+
+// InsertPath loads an image by absolute path. For the CLI and tests only;
+// never wire it to a request.
+func (d *ImageDrive) InsertPath(path string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("%q is not an absolute path", path)
+	}
+	return d.load(path)
+}
+
+func (d *ImageDrive) load(p string) error {
 	if _, err := os.Stat(p); err != nil {
 		return err
 	}
