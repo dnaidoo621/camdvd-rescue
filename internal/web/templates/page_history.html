@@ -1,0 +1,19 @@
+{{define "content"}}
+<h1>History</h1>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Disc</th><th>State</th><th>Sides</th><th>Folder</th><th>Started</th></tr></thead>
+  <tbody>
+  {{range .Data}}
+  <tr>
+    <td><a href="/jobs/{{.ID}}">{{title .}}</a><div class="meta">{{.ID}}</div></td>
+    <td><span class="pill {{stateTone .State}}">{{.State.Label}}</span></td>
+    <td>{{range .Sides}}<span class="pill">{{.Letter}}: {{classLabel .Decision.Class}}</span> {{end}}</td>
+    <td>{{if .Folder}}<a href="/library/{{.ID}}">{{.Folder}}</a>{{end}}</td>
+    <td class="meta">{{when .CreatedAt}}</td>
+  </tr>
+  {{else}}<tr><td colspan="5">No discs yet.</td></tr>{{end}}
+  </tbody>
+</table>
+</div>
+{{end}}

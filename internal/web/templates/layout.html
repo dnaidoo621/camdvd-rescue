@@ -1,0 +1,39 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{if ne .Title "dashboard"}}{{.Title | printf "%s" }} · {{end}}CamDVD Rescue</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css?v={{.Version}}">
+<script src="/static/htmx.min.js?v={{.Version}}"></script>
+<script src="/static/sse.js?v={{.Version}}"></script>
+<script src="/static/app.js?v={{.Version}}" defer></script>
+</head>
+<body hx-ext="sse" sse-connect="/api/events">
+<header class="top">
+  <a class="brand" href="/"><img src="/static/icon.svg" alt="" width="22" height="22"> CamDVD Rescue</a>
+  <nav>
+    <a href="/" {{if eq .Nav "dashboard"}}aria-current="page"{{end}}>Discs</a>
+    <a href="/library" {{if or (eq .Nav "library") (eq .Nav "folder")}}aria-current="page"{{end}}>Library</a>
+    <a href="/rename" {{if eq .Nav "rename"}}aria-current="page"{{end}}>Rename</a>
+    <a href="/history" {{if or (eq .Nav "history") (eq .Nav "job")}}aria-current="page"{{end}}>History</a>
+    <a href="/settings" {{if eq .Nav "settings"}}aria-current="page"{{end}}>Settings</a>
+    <a href="/doctor" {{if eq .Nav "doctor"}}aria-current="page"{{end}} class="{{if not .ReportOK}}nav-bad{{end}}">Doctor</a>
+    {{if .PasswordOn}}<form method="post" action="/logout" class="inline"><button class="link">Log out</button></form>{{end}}
+  </nav>
+</header>
+{{if and (not .ReportOK) (ne .Nav "doctor") (ne .Nav "login")}}
+<div class="banner bad" role="alert"><strong>Self-check failed — disc processing is blocked.</strong> {{.Blocked}} <a href="/doctor">See how to fix it</a></div>
+{{end}}
+{{if and .Settings.Batch (ne .Nav "login")}}
+<div class="banner attn">Batch mode is on: every disc is answered as {{if eq .Settings.BatchSides 2}}double-sided{{else}}single-sided{{end}}{{with .Settings.BatchDesc}}, “{{.}}”{{else}}, no description{{end}}. <a href="/settings#batch">Change</a></div>
+{{end}}
+<main>
+{{block "content" .}}{{end}}
+</main>
+<footer>CamDVD Rescue {{.Version}} · reads discs, never writes them</footer>
+<div id="toast" role="status" aria-live="polite"></div>
+<dialog id="player"><form method="dialog"><button class="close" aria-label="Close">×</button></form><h3></h3><video controls playsinline preload="metadata"></video><p class="meta"></p></dialog>
+</body>
+</html>{{end}}

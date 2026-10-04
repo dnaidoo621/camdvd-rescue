@@ -234,8 +234,10 @@ func (e *Engine) notice(dc *driveCtl, msg string) {
 	dc.mu.Lock()
 	dc.notice = msg
 	dc.mu.Unlock()
-	e.Log.Info("drive notice", "drive", dc.d.Info().ID, "msg", msg)
-	e.Hub.Publish("notice", msg)
+	if msg != "" {
+		e.Log.Info("drive notice", "drive", dc.d.Info().ID, "msg", msg)
+		e.Hub.Publish("notice", msg)
+	}
 	e.Hub.Publish("drives", "")
 }
 
@@ -305,11 +307,16 @@ func (e *Engine) watch(ctx context.Context, dc *driveCtl) {
 }
 
 // update saves a disc change and tells the browsers.
+// The job list is re-rendered only when a state changes, so progress ticks
+// don't redraw (and wipe) an answers form being typed into.
 func (e *Engine) update(id string, fn func(*store.Disc) error) (*store.Disc, error) {
-	d, err := e.St.UpdateDisc(id, fn)
+	var before store.State
+	d, err := e.St.UpdateDisc(id, func(d *store.Disc) error { before = d.State; return fn(d) })
 	if err == nil {
 		e.Hub.Publish("job-"+id, "")
-		e.Hub.Publish("jobs", "")
+		if d.State != before {
+			e.Hub.Publish("jobs", "")
+		}
 	}
 	return d, err
 }

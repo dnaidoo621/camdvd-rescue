@@ -1,0 +1,9 @@
+{{define "content"}}
+<form method="post" action="/login" class="panel login">
+  <h1>Log in</h1>
+  {{with .Data.Error}}<p class="flash bad">{{.}}</p>{{end}}
+  <input type="hidden" name="next" value="{{.Data.Next}}">
+  <label>Password <input type="password" name="password" autofocus autocomplete="current-password" required></label>
+  <button>Log in</button>
+</form>
+{{end}}

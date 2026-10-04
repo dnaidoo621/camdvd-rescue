@@ -1,0 +1,71 @@
+{{define "content"}}
+{{$s := .Data.S}}
+<h1>Settings</h1>
+{{if .Data.Saved}}<p class="flash ok">Saved.</p>{{end}}
+{{with .Error}}<p class="flash bad">{{.}}</p>{{end}}
+<form method="post" action="/settings" class="settings">
+  <section class="panel">
+    <h2>Conversion</h2>
+    <fieldset>
+      <legend>Quality preset</legend>
+      <label><input type="radio" name="preset" value="archive" {{if eq $s.Preset "archive"}}checked{{end}}> Archive <span class="meta">H.264 CRF 16, largest files</span></label>
+      <label><input type="radio" name="preset" value="standard" {{if eq $s.Preset "standard"}}checked{{end}}> Standard <span class="meta">CRF 18, visually lossless for DVD sources</span></label>
+      <label><input type="radio" name="preset" value="small" {{if eq $s.Preset "small"}}checked{{end}}> Small <span class="meta">CRF 22</span></label>
+      <label><input type="radio" name="preset" value="copy" {{if eq $s.Preset "copy"}}checked{{end}}> Copy only <span class="meta">MPEG-2 remuxed to MKV, no quality loss, no Photos tags</span></label>
+    </fieldset>
+    <fieldset>
+      <legend>Hardware encoding</legend>
+      <label><input type="radio" name="hwaccel" value="" {{if eq $s.HWAccel ""}}checked{{end}}> Off <span class="meta">x264, best quality per byte</span></label>
+      <label><input type="radio" name="hwaccel" value="vaapi" {{if eq $s.HWAccel "vaapi"}}checked{{end}}> VAAPI <span class="meta">Intel/AMD, needs /dev/dri and the render group</span></label>
+      <label><input type="radio" name="hwaccel" value="nvenc" {{if eq $s.HWAccel "nvenc"}}checked{{end}}> NVENC <span class="meta">NVIDIA</span></label>
+    </fieldset>
+    <fieldset>
+      <legend>Finalized DVD-Video: one file per</legend>
+      <label><input type="radio" name="split" value="chapter" {{if eq $s.Split "chapter"}}checked{{end}}> Chapter <span class="meta">most camcorders make one per recording</span></label>
+      <label><input type="radio" name="split" value="title" {{if eq $s.Split "title"}}checked{{end}}> Title</label>
+    </fieldset>
+    <label class="check"><input type="checkbox" name="combined" value="1" {{if $s.Combined}}checked{{end}}> Also write one combined MP4 per disc, with a chapter per recording</label>
+  </section>
+
+  <section class="panel">
+    <h2>Dates and camera</h2>
+    <div class="form-grid">
+      <label>Time zone <input name="timezone" value="{{$s.TimeZone}}" list="zones"></label>
+      <label>Camera make <input name="make" value="{{$s.Make}}" placeholder="Hitachi"></label>
+      <label>Camera model <input name="model" value="{{$s.Model}}" placeholder="VDR-M50"></label>
+      <label class="wide">Camera reset dates <span class="meta">recordings on these days are treated as undated (clock battery flat)</span>
+        <input name="reset_dates" value="{{join $s.ResetDates ", "}}" placeholder="2004-01-01"></label>
+    </div>
+    <datalist id="zones">{{range .Data.Zones}}<option>{{.}}</option>{{end}}</datalist>
+  </section>
+
+  <section class="panel" id="batch">
+    <h2>Batch mode</h2>
+    <p class="hint">Answer every disc the same way, to work through a stack without touching the UI.</p>
+    <label class="check"><input type="checkbox" name="batch" value="1" {{if $s.Batch}}checked{{end}}> Batch mode on</label>
+    <div class="form-grid">
+      <label>Sides <select name="batch_sides"><option value="1" {{if ne $s.BatchSides 2}}selected{{end}}>Single-sided</option><option value="2" {{if eq $s.BatchSides 2}}selected{{end}}>Double-sided</option></select></label>
+      <label>Description <input name="batch_desc" value="{{$s.BatchDesc}}" placeholder="none"></label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Clean-up</h2>
+    <label>Delete a disc's image and sources this many days after its MP4s verify <span class="meta">0 keeps them forever</span>
+      <input type="number" name="auto_clean" min="0" value="{{$s.AutoClean}}"></label>
+  </section>
+  <button>Save settings</button>
+</form>
+
+<section class="panel">
+  <h2>Installation</h2>
+  <p class="meta">These come from /etc/camdvd/config.toml; change them there and restart the service.</p>
+  <dl class="kv">
+    <dt>Listening on</dt><dd>{{.Data.Cfg.Listen}}</dd>
+    <dt>Library</dt><dd>{{.Data.Cfg.Library}}</dd>
+    <dt>State</dt><dd>{{.Data.Cfg.StateDir}}</dd>
+    <dt>Bundled tools</dt><dd>{{.Data.Cfg.ToolsDir}}</dd>
+    <dt>Login</dt><dd>{{if .PasswordOn}}on{{else}}off (set CAMDVD_PASSWORD in /etc/camdvd/env){{end}}</dd>
+  </dl>
+</section>
+{{end}}

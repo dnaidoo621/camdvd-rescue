@@ -1,0 +1,48 @@
+{{define "content"}}
+<h1>Bulk rename</h1>
+<p class="hint">Pick files or folders, describe the new names, check the preview, apply. Every apply can be undone.</p>
+<form class="rename" hx-post="/ui/rename/preview" hx-target="#preview" hx-trigger="input changed delay:300ms from:.rename, change from:.rename, submit">
+  <section class="panel select">
+    <h2>Select</h2>
+    <label><input type="checkbox" name="all_files" value="1"> Every file in the library</label>
+    {{$pre := .Data.Preselect}}
+    {{range .Data.Folders}}
+    <details class="folder" {{if eq $pre .Disc.ID}}open{{end}}>
+      <summary>
+        <span>📁 {{.Disc.Folder}}</span> <span class="meta">{{len .Clips}} files</span>
+      </summary>
+      <label><input type="checkbox" name="folder" value="{{.Disc.ID}}"> Rename the folder itself</label>
+      <label><input type="checkbox" class="all" data-group="g-{{.Disc.ID}}" {{if eq $pre .Disc.ID}}checked{{end}}> All files in it</label>
+      <ul>
+      {{$id := .Disc.ID}}
+      {{range .Clips}}{{if eq .State "placed"}}
+        <li><label><input type="checkbox" name="clip" value="{{.ID}}" class="g-{{$id}}" {{if eq $pre $id}}checked{{end}}> {{base .Output}}</label></li>
+      {{end}}{{end}}
+      </ul>
+    </details>
+    {{else}}<p class="meta">No finished discs yet.</p>{{end}}
+  </section>
+
+  <section class="panel pattern">
+    <h2>New names</h2>
+    <label>Pattern <span class="meta">empty keeps the current name</span>
+      <input name="template" placeholder="{desc} - {side}{rec:00}" autocomplete="off" spellcheck="false"></label>
+    <p class="tokens meta">Tokens:
+      <code>{desc}</code> <code>{rec:00}</code> (recording number on its side) <code>{n}</code> <code>{n:000}</code> (sequence) <code>{side}</code> <code>{date:yyyy-MM-dd}</code> <code>{time}</code> <code>{orig}</code> <code>{duration}</code></p>
+    <div class="form-grid">
+      <label>Start at <input type="number" name="start" value="1" min="0"></label>
+      <label>Step <input type="number" name="step" value="1" min="1"></label>
+      <label>Find <input name="find" autocomplete="off" spellcheck="false"></label>
+      <label>Replace with <input name="replace" autocomplete="off" spellcheck="false"></label>
+      <label class="check"><input type="checkbox" name="regex" value="1"> Find is a regular expression</label>
+      <label>Case
+        <select name="case"><option value="">Unchanged</option><option value="lower">lower case</option><option value="upper">UPPER CASE</option><option value="title">Title Case</option></select>
+      </label>
+    </div>
+    <h2>Preview</h2>
+    <div id="preview"><p class="hint">Tick files or folders on the left to see a preview.</p></div>
+    <div id="rename-result"></div>
+  </section>
+</form>
+{{template "batches" .Data.Batches}}
+{{end}}

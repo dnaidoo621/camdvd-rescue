@@ -1,0 +1,23 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>Self-check</h1>
+  <form method="post" action="/doctor"><button>Run again</button></form>
+</div>
+{{if .Data.OK}}<p class="flash ok">Everything CamDVD needs is present. Checked {{ago .Data.At}}.</p>
+{{else}}<p class="flash bad">Disc processing is blocked until the red lines are fixed.</p>{{end}}
+<div class="table-wrap">
+<table class="doctor">
+  <thead><tr><th></th><th>Check</th><th>Result</th><th>How to fix</th></tr></thead>
+  <tbody>
+  {{range .Data.Checks}}
+    <tr class="{{if .OK}}ok{{else if .Warn}}warn-row{{else}}bad{{end}}">
+      <td aria-label="{{if .OK}}ok{{else if .Warn}}warning{{else}}failed{{end}}">{{if .OK}}✓{{else if .Warn}}!{{else}}✗{{end}}</td>
+      <td><span class="meta">{{.Group}}</span> {{.Name}}</td>
+      <td>{{.Detail}}</td>
+      <td>{{with .Fix}}<code>{{.}}</code>{{end}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}

@@ -1,0 +1,187 @@
+{{/* ---------- Drives panel ---------- */}}
+{{define "drives"}}
+<section id="drives" class="drives" hx-get="/ui/drives" hx-trigger="sse:drives" hx-swap="outerHTML">
+{{range .Drives}}
+  <article class="drive">
+    <div class="drive-head">
+      <span class="dot {{if eq .Status "disc"}}on{{else if eq .Status "tray open"}}open{{end}}" aria-hidden="true"></span>
+      <div>
+        <strong>{{.Model}}</strong>
+        <div class="meta">{{.Block}}{{with .SG}} · {{.}}{{end}} · {{.Status}}{{if .Busy}} · working{{end}}</div>
+      </div>
+      <div class="drive-actions">
+        {{if .Demo}}
+          {{if .Current}}<span class="pill">{{.Current}}</span>{{else}}
+          <form hx-post="/ui/drives/{{.ID}}/insert" hx-target="#drives" hx-swap="outerHTML" class="inline">
+            <label class="sr-only" for="img-{{.ID}}">Image</label>
+            <select name="image" id="img-{{.ID}}">{{range .Images}}<option>{{.}}</option>{{end}}</select>
+            <button>Insert</button>
+          </form>{{end}}
+        {{end}}
+        <button hx-post="/ui/drives/{{.ID}}/eject" hx-target="#drives" hx-swap="outerHTML" class="secondary">Eject</button>
+      </div>
+    </div>
+    {{with .Notice}}<p class="notice">{{.}}</p>{{end}}
+    {{with .Holder}}<p class="meta">Reserved by <a href="/jobs/{{.}}">{{.}}</a></p>{{end}}
+  </article>
+{{else}}
+  <article class="drive"><p>No drive configured. Plug in a USB DVD drive and re-run the installer.</p></article>
+{{end}}
+</section>
+{{end}}
+
+{{/* ---------- Active jobs list ---------- */}}
+{{define "active"}}
+<section id="active" hx-get="/ui/active" hx-trigger="sse:jobs" hx-swap="outerHTML">
+{{range .}}{{template "card" .}}{{else}}
+  <div class="empty">
+    <h2>Insert a camcorder disc</h2>
+    <p>Imaging starts as soon as it's detected. You'll be asked two things: single or double-sided, and an optional description.</p>
+  </div>
+{{end}}
+</section>
+{{end}}
+
+{{/* ---------- Job card ---------- */}}
+{{define "card"}}
+{{$d := .Disc}}
+<article id="job-{{$d.ID}}" class="card tone-{{stateTone $d.State}} {{if eq $d.State "awaiting-answer"}}highlight{{end}}"
+  hx-get="/ui/jobs/{{$d.ID}}/card{{if .Detail}}?detail=1{{end}}" hx-trigger="sse:job-{{$d.ID}} throttle:500ms" hx-swap="outerHTML">
+  <header class="card-head">
+    <div>
+      <h2><a href="/jobs/{{$d.ID}}">{{title $d}}</a></h2>
+      <div class="meta">{{$d.ID}} · started {{ago $d.CreatedAt}}{{with $d.Folder}} · <a href="/library/{{$d.ID}}">{{.}}</a>{{end}}</div>
+    </div>
+    <span class="pill {{stateTone $d.State}}">{{$d.State.Label}}</span>
+  </header>
+  {{with $d.Message}}<p class="message">{{.}}</p>{{end}}
+
+  {{if not $d.Answered}}{{template "answers" .}}{{end}}
+
+  {{range $d.Sides}}
+  <section class="side">
+    <div class="side-head">
+      <strong>Side {{.Letter}}</strong>
+      {{with .Decision.Class}}<span class="pill">{{classLabel .}}</span>{{end}}
+      <span class="meta">{{.Probe.Media.Type}}{{with .Step}} · {{.}}{{end}}</span>
+    </div>
+    {{with .Decision.Reason}}<p class="reason">{{.}}</p>{{end}}
+    {{if not .Imaged}}
+      <div class="bar" role="progressbar" aria-valuenow="{{pct .ImageDone}}" aria-label="Imaging side {{.Letter}}"><span style="width:{{pct .ImageDone}}"></span></div>
+      <div class="meta">Imaging {{pct .ImageDone}}{{range .Stages}}{{if eq .Name "image"}} · {{.Message}}{{end}}{{end}}</div>
+    {{else}}
+      {{$r := .Readable}}
+      <div class="bar readable {{if lt $r 1.0}}damaged{{end}}" title="Readable sectors"><span style="width:{{pct $r}}"></span></div>
+      <div class="meta">Readable {{pct1 $r}}{{if .Bad}} · {{.Bad.Total}} sectors zero-filled{{end}}</div>
+    {{end}}
+    {{with .Error}}<p class="flash bad">{{.}}</p>{{end}}
+    {{$clips := sidesClips $.Clips .Letter}}
+    {{if $clips}}
+    <ol class="clips">
+      {{range $clips}}
+      <li class="clip">
+        {{if .Thumb}}<button class="thumb" data-play="/api/files/{{.ID}}/stream" data-title="{{.Side}}{{printf "%02d" .Num}}{{with .Output}} · {{base .}}{{end}}" aria-label="Play {{.Side}}{{printf "%02d" .Num}}"><img src="/api/files/{{.ID}}/thumb" alt="" loading="lazy" width="96" height="54"></button>
+        {{else}}<div class="thumb ph" aria-hidden="true"></div>{{end}}
+        <div class="clip-body">
+          <div><strong>{{.Side}}{{printf "%02d" .Num}}</strong> <span class="meta">{{.Source.Label}} · {{dur .Info.Duration}}{{if not .Date.When.IsZero}} · {{when .Date.When}}{{end}}</span></div>
+          {{if eq .State "converting"}}<div class="bar small"><span style="width:{{pct .Progress}}"></span></div>{{end}}
+          {{range .Warnings}}<div class="warn">{{.}}</div>{{end}}
+          {{with .Error}}<div class="warn bad">{{.}}</div>{{end}}
+        </div>
+        <span class="pill {{clipTone .State}}">{{if eq .State "converting"}}{{pct .Progress}}{{else}}{{.State}}{{end}}</span>
+      </li>
+      {{end}}
+    </ol>
+    {{end}}
+  </section>
+  {{end}}
+
+  {{if eq $d.State "done"}}
+  <section class="summary">
+    {{$n := len .Clips}}
+    <p><strong>{{$n}} clip{{if ne $n 1}}s{{end}}</strong> in <a href="/library/{{$d.ID}}">{{$d.Folder}}</a>.</p>
+    {{if $d.Warnings}}<details><summary>{{len $d.Warnings}} warning{{if ne (len $d.Warnings) 1}}s{{end}}</summary><ul class="warnings">{{range $d.Warnings}}<li>{{.}}</li>{{end}}</ul></details>{{end}}
+  </section>
+  {{end}}
+
+  <footer class="actions">
+    {{if eq $d.State "duplicate"}}<button hx-post="/ui/jobs/{{$d.ID}}/import-again" hx-target="#job-{{$d.ID}}" hx-swap="outerHTML">Import again</button>{{end}}
+    {{if canResume $d.State}}<button hx-post="/ui/jobs/{{$d.ID}}/resume" hx-target="#job-{{$d.ID}}" hx-swap="outerHTML">Resume</button>{{end}}
+    {{if canForceRaw $d}}<button class="secondary" hx-post="/ui/jobs/{{$d.ID}}/force-raw" hx-target="#job-{{$d.ID}}" hx-swap="outerHTML" hx-confirm="Ignore the classification and recover this disc raw?">Force raw recovery</button>{{end}}
+    {{if and (eq $d.State "done") (eq (len $d.Sides) 1)}}<button class="secondary" hx-post="/ui/jobs/{{$d.ID}}/add-side" hx-target="#job-{{$d.ID}}" hx-swap="outerHTML">Add another side</button>{{end}}
+    {{if canCancel $d.State}}<button class="danger" hx-post="/ui/jobs/{{$d.ID}}/cancel" hx-target="#job-{{$d.ID}}" hx-swap="outerHTML" hx-confirm="Cancel this disc? Resume continues where it stopped.">Cancel</button>{{end}}
+    {{if not .Detail}}<a class="button-link" href="/jobs/{{$d.ID}}">Details</a>{{end}}
+  </footer>
+</article>
+{{end}}
+
+{{/* ---------- The two questions ---------- */}}
+{{define "answers"}}
+{{$d := .Disc}}
+<form id="answers-{{$d.ID}}" class="answers" hx-post="/ui/jobs/{{$d.ID}}/answers" hx-swap="outerHTML" hx-preserve="true">
+  <fieldset class="sides">
+    <legend>Is this disc single or double-sided?</legend>
+    <label><input type="radio" name="sides" value="1" {{if ne .LastSides 2}}checked{{end}}> Single-sided</label>
+    <label><input type="radio" name="sides" value="2" {{if eq .LastSides 2}}checked{{end}}> Double-sided</label>
+  </fieldset>
+  <label class="desc">Description <span class="meta">(optional, names the folder and files)</span>
+    <input type="text" name="description" placeholder="e.g. 2004-12 Durban holiday" maxlength="120" autocomplete="off">
+  </label>
+  <div class="row">
+    <button type="submit">Submit</button>
+    <button type="submit" name="skip" value="1" class="secondary">Skip description</button>
+  </div>
+</form>
+{{end}}
+
+{{define "answered"}}
+<p class="flash ok" id="answers-{{.Disc.ID}}-done">{{if eq .Disc.SidesWanted 2}}Double-sided{{else}}Single-sided{{end}}{{with .Disc.Description}}, “{{.}}”{{end}}. Thanks.</p>
+{{end}}
+
+{{/* ---------- Rename preview ---------- */}}
+{{define "rename-preview"}}
+{{$p := .P}}
+<div class="preview">
+  <p class="meta">{{len $p.Ops}} selected · {{$p.Changes}} will change{{if not $p.Clean}} · <strong class="bad-text">fix the conflicts to apply</strong>{{end}}</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Folder</th><th>Current name</th><th></th><th>New name</th></tr></thead>
+    <tbody>
+    {{range .Rows}}
+      <tr class="{{if .Conflict}}conflict{{else if not .Changed}}same{{end}}">
+        <td class="meta">{{if eq .Kind "folder"}}(library){{else}}{{.Where}}{{end}}</td>
+        <td>{{if eq .Kind "folder"}}📁 {{end}}{{.Name}}</td>
+        <td aria-hidden="true">→</td>
+        <td>{{.NewName}}{{with .Conflict}}<div class="warn bad">{{.}}</div>{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  <form hx-post="/ui/rename/apply" hx-target="#rename-result">
+    <input type="hidden" name="preview_id" value="{{$p.ID}}">
+    <button {{if or (not $p.Clean) (eq $p.Changes 0)}}disabled{{end}}>Apply {{$p.Changes}} rename{{if ne $p.Changes 1}}s{{end}}</button>
+  </form>
+</div>
+{{end}}
+
+{{define "batches"}}
+<section id="batches" hx-get="/rename" hx-select="#batches" hx-trigger="renamed from:body" hx-swap="outerHTML">
+<h2>Recent renames</h2>
+{{range .}}
+  <div class="batch {{if .Undone}}undone{{end}}">
+    <span>{{.Summary}}</span> <span class="meta">{{ago .CreatedAt}}</span>
+    {{if .Undone}}<span class="pill muted">undone</span>{{else}}<button class="secondary" hx-post="/ui/rename/undo/{{.ID}}" hx-target="#batches" hx-swap="outerHTML">Undo</button>{{end}}
+  </div>
+{{else}}<p class="meta">None yet.</p>{{end}}
+</section>
+{{end}}
+
+{{define "rescan"}}
+<div class="flash ok">
+  <p>Rescan finished: {{len .Relinked}} re-linked, {{len .Missing}} missing, {{len .Unknown}} unknown.</p>
+  {{if .Relinked}}<details><summary>Re-linked</summary><ul>{{range .Relinked}}<li>{{.}}</li>{{end}}</ul></details>{{end}}
+  {{if .Missing}}<details open><summary>Missing (not found anywhere)</summary><ul>{{range .Missing}}<li>{{.}}</li>{{end}}</ul></details>{{end}}
+  {{if .Unknown}}<details><summary>Files CamDVD doesn't know (left alone)</summary><ul>{{range .Unknown}}<li>{{.}}</li>{{end}}</ul></details>{{end}}
+</div>
+{{end}}

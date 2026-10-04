@@ -73,6 +73,7 @@ func (e *Engine) startNew(ctx context.Context, dc *driveCtl, probe discinfo.Prob
 	}
 	e.setHolder(dc, d.ID)
 	e.notice(dc, "")
+	e.Hub.Publish("jobs", "")
 
 	// Already imported? Ask before reading it again.
 	if prev, _ := e.St.DiscsByFingerprint(fp); len(prev) > 0 {

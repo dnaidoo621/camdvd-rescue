@@ -24,6 +24,7 @@ type Item struct {
 	Side     string    `json:"side"`
 	Date     time.Time `json:"date"`
 	Duration float64   `json:"duration"`
+	Rec      int       `json:"rec"` // recording number within its side
 }
 
 // Pattern is what the user typed in the rename form.
@@ -106,11 +107,15 @@ func expand(tmpl string, it Item, orig string, n int) (string, error) {
 			return it.Side
 		case "orig":
 			return orig
-		case "n":
-			if arg != "" && strings.Trim(arg, "0") == "" {
-				return fmt.Sprintf("%0*d", len(arg), n)
+		case "n", "rec":
+			v := n
+			if name == "rec" {
+				v = it.Rec
 			}
-			return strconv.Itoa(n)
+			if arg != "" && strings.Trim(arg, "0") == "" {
+				return fmt.Sprintf("%0*d", len(arg), v)
+			}
+			return strconv.Itoa(v)
 		case "date":
 			if it.Date.IsZero() {
 				return "undated"

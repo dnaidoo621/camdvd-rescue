@@ -1,0 +1,39 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>Library</h1>
+  <div class="row">
+    <a class="button-link" href="/library{{if ne .Data.Filter "pending"}}?show=pending{{end}}">{{if eq .Data.Filter "pending"}}Show all{{else}}Not yet in Photos ({{.Data.Pending}}){{end}}</a>
+    <a class="button-link" href="/rename">Bulk rename</a>
+    <button class="secondary" hx-post="/ui/rescan" hx-target="#rescan-result">Rescan</button>
+  </div>
+</div>
+<div id="rescan-result"></div>
+<p class="hint">Import each folder into Photos on your Mac from the SMB share (File › Import), then tick it off here.</p>
+<div class="table-wrap">
+<table class="library">
+  <thead><tr><th>Folder</th><th>Recorded</th><th>Clips</th><th>Length</th><th>Size</th><th>In Photos</th></tr></thead>
+  <tbody>
+  {{$f := .Data.Filter}}
+  {{range .Data.Folders}}{{if or (ne $f "pending") (not .Disc.Imported)}}
+  <tr>
+    <td><a href="/library/{{.Disc.ID}}">{{.Disc.Folder}}</a>{{if .Missing}} <span class="pill bad">missing</span>{{end}}
+      {{with .Disc.Warnings}}<span class="pill attn" title="{{join . "\n"}}">{{len .}} warning{{if ne (len .) 1}}s{{end}}</span>{{end}}</td>
+    <td class="meta">{{if .Earliest.IsZero}}undated{{else}}{{when .Earliest}}{{end}}</td>
+    <td>{{len .Clips}}</td>
+    <td>{{dur .Duration}}</td>
+    <td class="meta">{{size .Size}}</td>
+    <td>
+      <form hx-post="/ui/library/{{.Disc.ID}}/imported" hx-target="next span" hx-trigger="change" class="inline">
+        <label class="sr-only" for="imp-{{.Disc.ID}}">Imported into Photos</label>
+        <input type="checkbox" id="imp-{{.Disc.ID}}" name="imported" {{if .Disc.Imported}}checked{{end}}>
+      </form>
+      <span>{{if .Disc.Imported}}<span class="pill ok">In Photos</span>{{else}}<span class="pill attn">Not yet</span>{{end}}</span>
+    </td>
+  </tr>
+  {{end}}{{else}}
+  <tr><td colspan="6">Nothing here yet. Finished discs appear here.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}

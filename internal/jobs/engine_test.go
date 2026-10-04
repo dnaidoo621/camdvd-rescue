@@ -15,6 +15,7 @@ import (
 	"github.com/dnaidoo621/camdvd-rescue/internal/config"
 	"github.com/dnaidoo621/camdvd-rescue/internal/drive"
 	"github.com/dnaidoo621/camdvd-rescue/internal/events"
+	"github.com/dnaidoo621/camdvd-rescue/internal/library"
 	"github.com/dnaidoo621/camdvd-rescue/internal/store"
 	"github.com/dnaidoo621/camdvd-rescue/internal/tools"
 )
@@ -273,4 +274,63 @@ func TestCancelAndResumeImaging(t *testing.T) {
 	}
 	h.e.Answers(id, 1, "")
 	h.waitFor("done", func() bool { return h.state(id) == store.Done })
+}
+
+func TestLibraryRenameUndoAndRescan(t *testing.T) {
+	h := newHarness(t)
+	set := h.e.Settings()
+	set.Batch, set.BatchSides, set.BatchDesc = true, 1, "Durban"
+	h.e.SaveSettings(set)
+	h.im.Insert("unfinalized-a.img")
+	h.waitFor("job", func() bool { return h.only() != nil })
+	id := h.only().ID
+	h.waitFor("done", func() bool { return h.state(id) == store.Done })
+
+	pv, err := h.e.PreviewRename(Selection{FolderFiles: []string{id}, Folders: []string{id}}, library.Pattern{Template: "Beach {n:00}"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pv.Clean || pv.Changes != 4 {
+		t.Fatalf("preview %+v", pv)
+	}
+	b, err := h.e.ApplyRename(pv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Files got "Beach 01..03", the folder "Beach 04".
+	d, _ := h.e.St.Disc(id)
+	if d.Folder != "Beach 04" {
+		t.Errorf("folder %q", d.Folder)
+	}
+	if got := h.files("Beach 04"); strings.Join(got, "|") != "Beach 01.mp4|Beach 02.mp4|Beach 03.mp4" {
+		t.Errorf("files %v", got)
+	}
+	clips, _ := h.e.St.Clips(id)
+	if clips[0].Output != filepath.Join("Beach 04", "Beach 01.mp4") {
+		t.Errorf("clip output %q", clips[0].Output)
+	}
+	if err := h.e.UndoRename(b.ID); err != nil {
+		t.Fatal(err)
+	}
+	d, _ = h.e.St.Disc(id)
+	if d.Folder != "Durban" || len(h.files("Durban")) != 3 {
+		t.Errorf("undo: folder %q files %v", d.Folder, h.files("Durban"))
+	}
+
+	// Rename outside the app, as over SMB, then rescan.
+	os.Rename(filepath.Join(h.lib, "Durban"), filepath.Join(h.lib, "Durban 2004"))
+	os.Rename(filepath.Join(h.lib, "Durban 2004", "Durban - 02.mp4"), filepath.Join(h.lib, "Durban 2004", "best bit.mp4"))
+	os.WriteFile(filepath.Join(h.lib, "Durban 2004", "notes.txt"), []byte("x"), 0o644)
+	rep, err := h.e.Rescan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Relinked) != 3 || len(rep.Missing) != 0 || len(rep.Unknown) != 1 {
+		t.Fatalf("rescan %+v", rep)
+	}
+	d, _ = h.e.St.Disc(id)
+	c2, _ := h.e.St.Clip(clips[1].ID)
+	if d.Folder != "Durban 2004" || c2.Output != filepath.Join("Durban 2004", "best bit.mp4") {
+		t.Errorf("after rescan folder %q clip %q", d.Folder, c2.Output)
+	}
 }

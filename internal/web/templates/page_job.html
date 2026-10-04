@@ -1,0 +1,36 @@
+{{define "content"}}
+{{$d := .Data.Disc}}
+<p class="crumbs"><a href="/history">History</a> / {{$d.ID}}</p>
+{{template "card" .Data}}
+<section class="panel">
+  <h2>What happened</h2>
+  {{range $d.Sides}}
+  <h3>Side {{.Letter}}{{with .Fingerprint}} <span class="meta">fingerprint {{.}}</span>{{end}}</h3>
+  <div class="table-wrap">
+  <table class="stages">
+    <thead><tr><th>Stage</th><th>Status</th><th>Started</th><th>Ended</th><th>Result</th></tr></thead>
+    <tbody>
+    {{range .Stages}}
+      <tr>
+        <td>{{.Name}}</td>
+        <td><span class="pill {{if eq .Status "done"}}ok{{else if eq .Status "failed"}}bad{{else}}busy{{end}}">{{.Status}}</span></td>
+        <td class="meta">{{clock .Started}}</td>
+        <td class="meta">{{clock .Ended}}</td>
+        <td>{{.Message}}
+          {{if or .Cmd .Stderr}}<details><summary>Command and output</summary>
+            {{range .Cmd}}<pre class="cmd">$ {{.}}</pre>{{end}}
+            {{with .Stderr}}<pre>{{.}}</pre>{{end}}
+          </details>{{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  <details><summary>Probe evidence</summary><pre>{{.Evidence}}</pre></details>
+  {{end}}
+  {{if $d.State.Terminal}}
+  <p><button class="danger secondary" hx-post="/ui/jobs/{{$d.ID}}/delete" hx-confirm="Forget this job and delete its working files (image, sources)? MP4s in the library stay.">Forget job</button></p>
+  {{end}}
+</section>
+{{end}}

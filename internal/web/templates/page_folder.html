@@ -1,0 +1,57 @@
+{{define "content"}}
+{{$f := .Data.F}}{{$d := $f.Disc}}
+<p class="crumbs"><a href="/library">Library</a> / {{$d.Folder}}</p>
+<div class="page-head">
+  <h1>{{$d.Folder}}</h1>
+  <div class="row">
+    <a class="button-link" href="/rename?disc={{$d.ID}}">Bulk rename</a>
+    <a class="button-link" href="/jobs/{{$d.ID}}">Job details</a>
+  </div>
+</div>
+{{if .Data.Saved}}<p class="flash ok">Saved. Tags were rewritten in the files where needed.</p>{{end}}
+{{if $f.Missing}}<p class="flash bad">This folder isn't on disk any more. If it was renamed over SMB, press Rescan in the library.</p>{{end}}
+
+<section class="grid">
+{{range $f.Clips}}
+  <figure class="tile {{if eq .State "failed"}}failed{{end}}">
+    {{if and .Thumb .Output}}<button class="thumb big" data-play="/api/files/{{.ID}}/stream" data-title="{{base .Output}}" data-meta="{{dur .Info.Duration}}{{if not .Date.When.IsZero}} · {{when .Date.When}}{{end}}"><img src="/api/files/{{.ID}}/thumb" alt="" loading="lazy" width="320" height="180"><span class="play" aria-hidden="true">▶</span></button>
+    {{else}}<div class="thumb big ph"></div>{{end}}
+    <figcaption>
+      <strong>{{if .Output}}{{base .Output}}{{else}}{{.Side}}{{printf "%02d" .Num}} (not converted){{end}}</strong>
+      <span class="meta">{{dur .Info.Duration}} · {{if .Date.When.IsZero}}undated{{else}}{{when .Date.When}}{{end}}{{if eq .Date.Source "disc-date"}} (disc date){{end}} · {{size .Size}}</span>
+      {{range .Warnings}}<span class="warn">{{.}}</span>{{end}}
+      {{with .Error}}<span class="warn bad">{{.}}</span>{{end}}
+      {{if .Output}}<a class="meta" href="/api/files/{{.ID}}/stream?download=1">Download</a>{{end}}
+    </figcaption>
+  </figure>
+{{end}}
+</section>
+
+<section class="panel">
+  <h2>Disc details</h2>
+  <form hx-post="/ui/library/{{$d.ID}}" hx-target="#edit-result" class="form-grid">
+    <label>Description <input name="description" value="{{$d.Description}}" maxlength="120"></label>
+    <label>Folder name <input name="folder" value="{{$d.Folder}}" maxlength="120"></label>
+    <label>Disc date <span class="meta">for clips without their own date; yyyy-mm-dd or yyyy-mm-ddThh:mm</span>
+      <input name="disc_date" value="{{$d.DiscDate}}" placeholder="2004-12-24"></label>
+    <label>Time zone <input name="tz" value="{{$d.TZ}}" list="zones"></label>
+    <label>Camera make <input name="make" value="{{$d.Make}}" placeholder="Hitachi"></label>
+    <label>Camera model <input name="model" value="{{$d.Model}}" placeholder="VDR-M50"></label>
+    <label class="wide">Place <span class="meta">ISO 6709, shows on the Photos map, e.g. +29.8587+031.0218/</span>
+      <input name="location" value="{{$d.Location}}"></label>
+    <div class="wide row"><button>Save and rewrite tags</button><span id="edit-result"></span></div>
+  </form>
+  <datalist id="zones">{{range .Data.Zones}}<option>{{.}}</option>{{end}}</datalist>
+</section>
+
+<section class="panel">
+  <h2>Disc</h2>
+  <p class="meta">{{$d.ID}} · {{range $d.Sides}}side {{.Letter}}: {{classLabel .Decision.Class}}, readable {{pct1 .Readable}} · {{end}}{{if $d.Cleaned}}image and sources deleted{{else}}sources kept in .camdvd/{{$d.ID}}{{end}}</p>
+  {{with $d.Warnings}}<details open><summary>Warnings</summary><ul class="warnings">{{range .}}<li>{{.}}</li>{{end}}</ul></details>{{end}}
+  <div class="row">
+    {{if eq (len $d.Sides) 1}}<button class="secondary" hx-post="/ui/library/{{$d.ID}}/add-side" hx-target="#disc-result">Add another side</button>{{end}}
+    {{if not $d.Cleaned}}<button class="secondary danger" hx-post="/ui/library/{{$d.ID}}/clean" hx-target="#disc-result" hx-confirm="Delete this disc's image and source files? The MP4s stay; re-converting with other settings won't be possible.">Clean up sources</button>{{end}}
+  </div>
+  <div id="disc-result"></div>
+</section>
+{{end}}
