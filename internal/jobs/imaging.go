@@ -22,7 +22,7 @@ func (e *Engine) onInsert(dc *driveCtl) {
 		return
 	}
 	e.notice(dc, "Disc detected, probing…")
-	probe, evidence, err := dc.d.Probe(ctx)
+	probe, evidence, err := e.settledProbe(ctx, dc)
 	if err != nil {
 		e.notice(dc, "Couldn't probe the disc: "+err.Error())
 		return
@@ -41,6 +41,38 @@ func (e *Engine) onInsert(dc *driveCtl) {
 		e.setHolder(dc, "")
 	}
 	e.startNew(ctx, dc, probe, evidence)
+}
+
+// ProbeSettle is how long to wait before probing again when a disc that
+// just went in reads as blank or absent: drives report that while still
+// spinning up and identifying the media, especially DVD-RAM.
+var ProbeSettle = 4 * time.Second
+
+// settledProbe probes, and probes again (up to three times) while the
+// drive says the disc is blank or missing, so a slow-to-identify disc isn't
+// ejected as blank.
+func (e *Engine) settledProbe(ctx context.Context, dc *driveCtl) (discinfo.Probe, string, error) {
+	var probe discinfo.Probe
+	var evidence string
+	var err error
+	for try := 0; try < 3; try++ {
+		probe, evidence, err = dc.d.Probe(ctx)
+		if err != nil {
+			return probe, evidence, err
+		}
+		if !probe.Media.NoMedia && probe.Media.DiscStatus != "blank" {
+			return probe, evidence, nil
+		}
+		if st, _ := dc.d.Status(ctx); st != drive.StatusDiscOK && st != drive.StatusNotReady {
+			return probe, evidence, nil // really gone
+		}
+		select {
+		case <-ctx.Done():
+			return probe, evidence, ctx.Err()
+		case <-time.After(ProbeSettle):
+		}
+	}
+	return probe, evidence, nil
 }
 
 // startNew begins a job for a newly inserted disc.

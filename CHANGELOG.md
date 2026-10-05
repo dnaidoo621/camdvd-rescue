@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.1.7 — 2026-10-05
+
+- **Damaged discs:** raw imaging now works in ddrescue-style passes — copy
+  what reads (skipping failures), trim inwards from each damaged area's
+  edges, then scrape only small gaps. A recording cut off mid-write (a dead
+  tail of ~1600 sectors, ~6 s per failed read) costs a few failed reads
+  instead of hours.
+- **Fingerprint never blocks a rescue:** an unreadable sample steps back
+  towards the start, and an entirely unreadable side is identified by its
+  track table. Discs with a damaged end failed with "read fingerprint sample".
+- **No false "blank":** a disc that reads as blank or absent right after
+  insertion is probed again (up to three times, 4 s apart) before ejecting.
+
 ## v0.1.6 — 2026-10-05
 
 - **Overview** on the Discs page: what's reading and converting, clips and
