@@ -472,11 +472,16 @@ func TestReprocessFromSavedImage(t *testing.T) {
 	}
 	h.e.Cancel(id)
 	h.waitFor("stopped", func() bool { return !h.e.Running(id) })
+	// An earlier run's failed listing must not stick to the reprocessed side.
+	h.e.update(id, func(d *store.Disc) error { d.Side("A").Probe.ListFailed = true; return nil })
 	if err := h.e.Reprocess(id); err != nil {
 		t.Fatal(err)
 	}
 	h.waitFor("done", func() bool { return h.state(id) == store.Done })
 	if got := h.files("Again"); len(got) != 3 {
 		t.Errorf("files %v", got)
+	}
+	if d, _ := h.e.St.Disc(id); d.Side("A").Probe.ListFailed || d.Side("A").Decision.Class != "unfinalized" {
+		t.Errorf("stale verdict kept: %+v", d.Side("A").Decision)
 	}
 }
