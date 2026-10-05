@@ -87,42 +87,77 @@ var ErrMediaRemoved = errors.New("disc removed")
 // written size, and a hash of 1 MB of written data. For an open session that
 // sample is the last 1 MB of the last written track, because the start of an
 // unfinalized side is an unwritten file-system area that both sides share.
+//
+// It never stops a rescue: if the sample is unreadable (a recording cut off
+// mid-write leaves a damaged tail) it steps back towards the start, and as a
+// last resort identifies the side by its track table alone.
 func Fingerprint(ctx context.Context, d Drive, p discinfo.Probe) (string, error) {
 	used := p.Media.UsedSectors()
 	const n = 512
-	lba, cnt, raw := int64(0), int64(n), false
+	start, end, raw := int64(0), min(int64(n), max(used, n)), false
 	if p.Media.Open() && p.FSType == "" {
 		raw = true
 		exts := p.Media.Extents()
-		if len(exts) == 0 {
-			return "", fmt.Errorf("no written tracks to sample")
+		if len(exts) > 0 {
+			last := exts[len(exts)-1]
+			start, end = last.Start, last.End
 		}
-		last := exts[len(exts)-1]
-		lba = max(last.Start, last.End-n)
-		cnt = last.End - lba
 	} else if used > 0 {
-		cnt = min(cnt, used)
-	}
-	b, err := d.ReadSectors(ctx, lba, cnt, raw)
-	if err != nil {
-		return "", fmt.Errorf("read fingerprint sample at sector %d: %w", lba, err)
+		end = used
 	}
 	h := sha256.New()
 	fmt.Fprintf(h, "%s|%d|%d|", p.Media.Type, p.Media.Capacity, used)
+	if raw {
+		lba := max(start, end-n)
+		for try := 0; try < 16 && lba >= start; try++ {
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			b, err := d.ReadSectors(ctx, lba, min(n, end-lba), true)
+			if errors.Is(err, ErrMediaRemoved) {
+				return "", err
+			}
+			if err == nil {
+				fmt.Fprintf(h, "%d|", lba)
+				h.Write(b)
+				return hex.EncodeToString(h.Sum(nil))[:16], nil
+			}
+			lba -= 4 * n // 4 MB further back
+		}
+		// Nothing near the end reads: the track table still tells sides apart.
+		for _, t := range p.Media.Tracks {
+			fmt.Fprintf(h, "%s|%d|%d|%d|", t.State, t.Start, t.Size, t.LastRecorded)
+		}
+		return "m" + hex.EncodeToString(h.Sum(nil))[:15], nil
+	}
+	b, err := d.ReadSectors(ctx, 0, min(int64(n), end), false)
+	if err != nil {
+		return "", fmt.Errorf("read fingerprint sample: %w", err)
+	}
 	h.Write(b)
 	return hex.EncodeToString(h.Sum(nil))[:16], nil
 }
 
-// copyLoop images by reading chunks through read, keeping a ddrescue-format
-// mapfile so a cancelled run resumes. A failed chunk is retried in smaller
-// pieces, down to single sectors; unreadable sectors are zero-filled and
-// marked bad.
+// ScrapeMax is the largest unreadable gap read sector by sector; bigger
+// gaps are zero-filled after their edges are found. A failed read can cost
+// a drive several seconds of retries, so scraping a dead area is slow and
+// rarely recovers anything.
+var ScrapeMax int64 = 32
+
+// copyLoop images by reading through read, keeping a ddrescue-format mapfile
+// so a cancelled run resumes. Like ddrescue it works in passes:
+//
+//  1. copy: read 512-sector chunks, skipping any that fail;
+//  2. trim: from each failed area's edges, read inwards until the first
+//     failure, so readable data next to damage isn't lost;
+//  3. scrape: read the remaining gaps sector by sector when they're small
+//     (ScrapeMax); larger ones are marked bad and left as zeros.
 //
 // extents limits reading to the written ranges of an open session (nil reads
-// [0, total)); the unwritten gaps between camcorder tracks are left as zeros
-// and stay "non-tried" in the map, so they never count as damage. stopAfter
-// > 0 ends the last extent at that many consecutive unreadable sectors, the
-// unwritten tail when the drive doesn't report the last recorded address.
+// [0, total)); the unwritten gaps between camcorder tracks stay "non-tried"
+// and never count as damage. stopAfter > 0 treats an unreadable area of at
+// least that many sectors at the end of the last extent as the unwritten
+// tail (when the drive doesn't report the last recorded address).
 func copyLoop(ctx context.Context, read func(ctx context.Context, lba, n int64) ([]byte, error),
 	total int64, extents []Range, out, mapPath string, stopAfter int64, progress func(Progress)) (ImageResult, error) {
 
@@ -155,112 +190,205 @@ func copyLoop(ctx context.Context, read func(ctx context.Context, lba, n int64) 
 
 	report := func() {
 		if progress != nil {
-			done := m.Count(Finished) + m.Count(BadSector)
-			progress(Progress{Done: done, Total: want * SectorSize, Bad: m.Count(BadSector)})
+			done := m.Count(Finished) + m.Count(BadSector) + m.Count(NonTrimmed) + m.Count(NonScraped)
+			progress(Progress{Done: min(done, want*SectorSize), Total: want * SectorSize, Bad: m.Count(BadSector)})
 		}
 	}
-	var consecutiveBad int64
-	zero := make([]byte, SectorSize)
+	status := func(lba int64) byte { return m.Status(lba * SectorSize) }
+	mark := func(lba, n int64, st byte) { m.Set(lba*SectorSize, n*SectorSize, st) }
+	save := func() error { report(); return m.Write(mapPath) }
 
-	readRange := func(lba, n int64) error {
+	// tryRead reads n sectors; ok=false means unreadable (not an abort).
+	tryRead := func(lba, n int64) (bool, error) {
 		b, err := read(ctx, lba, n)
 		if err == nil && int64(len(b)) == n*SectorSize {
 			if _, err := f.WriteAt(b, lba*SectorSize); err != nil {
-				return err
+				return false, err
 			}
-			m.Set(lba*SectorSize, n*SectorSize, Finished)
-			consecutiveBad = 0
-			return nil
+			mark(lba, n, Finished)
+			return true, nil
 		}
-		if ctx.Err() != nil || errors.Is(err, ErrMediaRemoved) {
-			return err
+		if ctx.Err() != nil {
+			return false, ctx.Err()
 		}
-		return errRetry
+		if errors.Is(err, ErrMediaRemoved) {
+			return false, err
+		}
+		return false, nil
+	}
+	abort := func(err error) (ImageResult, error) {
+		_ = m.Write(mapPath)
+		return res, err
 	}
 
+	// Pass 1: copy.
 	const chunk = 512
-	for ei, ext := range extents {
-		last := ei == len(extents)-1
-		consecutiveBad = 0
+	for _, ext := range extents {
 		for lba := ext.Start; lba < ext.End; {
 			if ctx.Err() != nil {
-				_ = m.Write(mapPath)
-				return res, ctx.Err()
+				return abort(ctx.Err())
 			}
-			if m.Status(lba*SectorSize) == Finished {
+			if status(lba) != NonTried {
 				lba++
-				for lba < ext.End && lba%chunk != 0 && m.Status(lba*SectorSize) == Finished {
-					lba++
-				}
 				continue
 			}
 			n := min(chunk-lba%chunk, ext.End-lba)
-			// Skip a finished tail inside the chunk on resume.
-			for i := int64(1); i < n; i++ {
-				if m.Status((lba+i)*SectorSize) == Finished {
+			for i := int64(1); i < n; i++ { // stop at anything already handled
+				if status(lba+i) != NonTried {
 					n = i
 					break
 				}
 			}
-			err := readRange(lba, n)
-			if err == errRetry {
-				if n > 32 {
-					// Pieces of 32 sectors; failures fall through to singles.
-					err = nil
-					for s := lba; s < lba+n; s += 32 {
-						if e := readRange(s, min(32, lba+n-s)); e == errRetry {
-							err = errRetry
-						} else if e != nil {
-							_ = m.Write(mapPath)
-							return res, e
-						}
-					}
-				}
-				if err == errRetry {
-					// Single sectors: zero-fill what still fails.
-					for s := lba; s < lba+n; s++ {
-						if m.Status(s*SectorSize) == Finished {
-							continue
-						}
-						e := readRange(s, 1)
-						if e == errRetry {
-							_, _ = f.WriteAt(zero, s*SectorSize)
-							m.Set(s*SectorSize, SectorSize, BadSector)
-							consecutiveBad++
-							if last && stopAfter > 0 && consecutiveBad >= stopAfter {
-								// Unwritten tail: unmark it and stop.
-								start := s - consecutiveBad + 1
-								m.Set(start*SectorSize, (ext.End-start)*SectorSize, NonTried)
-								res.StoppedAt = start
-								_ = m.Write(mapPath)
-								res.Bad = m.BadSectors(start * SectorSize)
-								report()
-								return res, nil
-							}
-						} else if e != nil {
-							_ = m.Write(mapPath)
-							return res, e
-						}
-					}
-				}
-			} else if err != nil {
-				_ = m.Write(mapPath)
-				return res, err
+			ok, err := tryRead(lba, n)
+			if err != nil {
+				return abort(err)
+			}
+			if !ok {
+				mark(lba, n, NonTrimmed)
 			}
 			lba += n
-			if lba%(chunk*8) == 0 || lba >= ext.End {
-				if err := m.Write(mapPath); err != nil {
+			if lba%(chunk*8) == 0 || lba >= ext.End || !ok {
+				if err := save(); err != nil {
 					return res, err
 				}
-				report()
 			}
 		}
 	}
-	if err := m.Write(mapPath); err != nil {
+
+	// Pass 2: trim each failed area from both edges, then sweep what's left
+	// of large ones for readable islands (one 16-sector probe every 256
+	// sectors); an island splits the area, whose new edges are trimmed in
+	// the next round. Two separate scratches a chunk apart are both handled
+	// this way, while a dead area costs only a few failed reads.
+	trim := func(ext Range, last bool, r Range) (stop bool, err error) {
+		a, b := r.Start, r.End
+		singles := false // after a 16-sector read fails, approach the damage one sector at a time
+		for a < b {      // leading edge
+			if ctx.Err() != nil {
+				return false, ctx.Err()
+			}
+			if !singles && b-a >= 16 {
+				ok, err := tryRead(a, 16)
+				if err != nil {
+					return false, err
+				}
+				if ok {
+					a += 16
+					continue
+				}
+				singles = true
+			}
+			ok, err := tryRead(a, 1)
+			if err != nil {
+				return false, err
+			}
+			if !ok {
+				break
+			}
+			a++
+		}
+		if last && stopAfter > 0 && b == ext.End && b-a >= stopAfter {
+			// The unwritten tail: not damage, and not worth reading.
+			mark(a, b-a, NonTried)
+			res.StoppedAt = a
+			return true, nil
+		}
+		for b > a+1 { // trailing edge
+			ok, err := tryRead(b-1, 1)
+			if err != nil {
+				return false, err
+			}
+			if !ok {
+				break
+			}
+			b--
+		}
+		if b > a {
+			mark(a, b-a, NonScraped)
+		}
+		return false, nil
+	}
+	swept := map[int64]bool{} // probe positions already tried
+	for round := 0; round < 64; round++ {
+		changed := false
+		for ei, ext := range extents {
+			for _, r := range m.regions(ext, NonTrimmed) {
+				stop, err := trim(ext, ei == len(extents)-1, r)
+				if err != nil {
+					return abort(err)
+				}
+				if stop {
+					_ = save()
+					res.Bad = m.BadSectors(res.StoppedAt * SectorSize)
+					return res, nil
+				}
+				changed = true
+			}
+			for _, r := range m.regions(ext, NonScraped) {
+				if r.Len() <= ScrapeMax {
+					continue
+				}
+				for p := r.Start + 16; p+16 <= r.End-16; p += 256 {
+					if swept[p] {
+						continue
+					}
+					swept[p] = true
+					if ctx.Err() != nil {
+						return abort(ctx.Err())
+					}
+					ok, err := tryRead(p, 16)
+					if err != nil {
+						return abort(err)
+					}
+					if ok {
+						// An island: what's left on either side gets trimmed.
+						if p > r.Start {
+							mark(r.Start, p-r.Start, NonTrimmed)
+						}
+						if r.End > p+16 {
+							mark(p+16, r.End-p-16, NonTrimmed)
+						}
+						changed = true
+						break
+					}
+				}
+			}
+		}
+		if err := save(); err != nil {
+			return res, err
+		}
+		if !changed {
+			break
+		}
+	}
+
+	// Pass 3: scrape small gaps sector by sector; give up on large ones.
+	// Bad sectors need no zero-fill: the image starts as a sparse file of
+	// zeros and only good reads are ever written to it.
+	for _, ext := range extents {
+		for _, r := range m.regions(ext, NonScraped) {
+			if r.Len() > ScrapeMax {
+				mark(r.Start, r.Len(), BadSector)
+				continue
+			}
+			for s := r.Start; s < r.End; s++ {
+				if ctx.Err() != nil {
+					return abort(ctx.Err())
+				}
+				ok, err := tryRead(s, 1)
+				if err != nil {
+					return abort(err)
+				}
+				if !ok {
+					mark(s, 1, BadSector)
+				}
+			}
+		}
+	}
+	if err := save(); err != nil {
 		return res, err
 	}
 	res.Bad = m.BadSectors(total * SectorSize)
-	report()
 	return res, nil
 }
 

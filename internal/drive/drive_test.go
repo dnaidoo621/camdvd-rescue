@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/dnaidoo621/camdvd-rescue/internal/tools"
 	"os"
 	"path/filepath"
 	"testing"
@@ -217,5 +218,82 @@ func TestBlocksPerTransfer(t *testing.T) {
 		if got := BlocksPerTransfer(dir); got != want {
 			t.Errorf("max_hw_sectors_kb=%q: %d, want %d", kb, got, want)
 		}
+	}
+}
+
+// A recording cut off mid-write: the last ~1600 sectors of the video are
+// unreadable, each failed read costing the drive seconds. The passes must
+// find the edges with a handful of failed reads, not try every sector.
+func TestCopyLoopDamagedTailIsCheap(t *testing.T) {
+	_, src := makeImage(t, 20000)
+	dir := t.TempDir()
+	bad := Ranges{{18300, 19900}}
+	var failed int
+	read := func(c context.Context, lba, n int64) ([]byte, error) {
+		b, err := reader(src, bad)(c, lba, n)
+		if err != nil {
+			failed++
+		}
+		return b, err
+	}
+	res, err := copyLoop(context.Background(), read, 20000, []Range{{0, 19900}}, filepath.Join(dir, "a.img"), filepath.Join(dir, "a.map"), 4096, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed > 14 { // 4 copy + 2 trim + 1 trailing edge + 7 sweep probes
+		t.Errorf("%d failed reads; the dead area should be skipped, not scraped", failed)
+	}
+	if res.Bad.Total() != 1600 || res.Bad[0] != (Range{18300, 19900}) {
+		t.Errorf("bad %+v", res.Bad)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, "a.img"))
+	if !bytes.Equal(got[:18300*SectorSize], src[:18300*SectorSize]) {
+		t.Error("readable data before the damage was lost (edges not trimmed)")
+	}
+}
+
+func TestCopyLoopTrimsAroundAHoleInsideAChunk(t *testing.T) {
+	_, src := makeImage(t, 4096)
+	dir := t.TempDir()
+	res, err := copyLoop(context.Background(), reader(src, Ranges{{1000, 1100}}), 4096, nil,
+		filepath.Join(dir, "a.img"), filepath.Join(dir, "a.map"), 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Bad.Total() != 100 {
+		t.Errorf("bad %+v", res.Bad)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, "a.img"))
+	// The hole spans chunks 512-1024 and 1024-1536; trimming recovers the
+	// readable parts of both chunks around it.
+	for _, r := range []Range{{512, 1000}, {1100, 1536}} {
+		if !bytes.Equal(got[r.Start*SectorSize:r.End*SectorSize], src[r.Start*SectorSize:r.End*SectorSize]) {
+			t.Errorf("sectors %d-%d not recovered", r.Start, r.End)
+		}
+	}
+}
+
+func TestFingerprintSurvivesUnreadableTail(t *testing.T) {
+	p, _ := makeImage(t, 6000)
+	dir := filepath.Dir(p)
+	media := `{"type":"DVD-R Sequential","disc_status":"appendable","session_state":"incomplete","next_writable":6000,
+	  "tracks":[{"state":"incomplete incremental","start":100,"size":5900,"next_writable":6000,"last_recorded":5999}]}`
+	os.WriteFile(p+".media.json", []byte(media), 0o644)
+	d := NewImageDrive("t", dir, tools.Set{})
+	if err := d.Insert("disc.img"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	probe, _, _ := d.Probe(ctx)
+
+	os.WriteFile(p+".bad.json", []byte(`[{"start":5000,"end":6000}]`), 0o644)
+	fp, err := Fingerprint(ctx, d, probe)
+	if err != nil || fp == "" || fp[0] == 'm' {
+		t.Fatalf("stepping back should find readable data: %q %v", fp, err)
+	}
+	os.WriteFile(p+".bad.json", []byte(`[{"start":0,"end":6000}]`), 0o644)
+	fp2, err := Fingerprint(ctx, d, probe)
+	if err != nil || fp2 == "" || fp2[0] != 'm' {
+		t.Fatalf("unreadable disc should get a track-table fingerprint: %q %v", fp2, err)
 	}
 }

@@ -41,6 +41,7 @@ func newHarness(t *testing.T) *harness {
 		}
 	}
 	PollInterval = 100 * time.Millisecond
+	ProbeSettle = 50 * time.Millisecond
 	dir := t.TempDir()
 	cfg := config.Defaults()
 	cfg.Library = filepath.Join(dir, "library")

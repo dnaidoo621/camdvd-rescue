@@ -159,6 +159,22 @@ func (m *Map) BadSectors(limit int64) []Range {
 	return out
 }
 
+// regions returns the sector ranges inside ext whose status is st.
+func (m *Map) regions(ext Range, st byte) []Range {
+	var out []Range
+	lo, hi := ext.Start*SectorSize, ext.End*SectorSize
+	for _, bl := range m.Blocks {
+		if bl.Status != st {
+			continue
+		}
+		a, b := max(bl.Pos, lo), min(bl.Pos+bl.Size, hi)
+		if a < b {
+			out = append(out, Range{a / SectorSize, (b + SectorSize - 1) / SectorSize})
+		}
+	}
+	return out
+}
+
 // Range is a half-open sector range.
 type Range struct {
 	Start int64 `json:"start"`
