@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dnaidoo621/camdvd-rescue/internal/discinfo"
 	"github.com/dnaidoo621/camdvd-rescue/internal/drive"
 	"github.com/dnaidoo621/camdvd-rescue/internal/store"
 )
@@ -250,6 +251,50 @@ func (e *Engine) ForceRaw(id string) error {
 	_ = os.RemoveAll(filepath.Join(e.workDir(id), "out"))
 	for _, s := range d.Sides {
 		_ = e.St.DeleteClips(id, s.Letter)
+	}
+	e.resumeProcessing(d)
+	return nil
+}
+
+// Reprocess classifies and extracts a cancelled or failed disc again from
+// its saved images, e.g. after an update that reads the format better. It
+// clears a forced raw recovery; the disc isn't needed.
+func (e *Engine) Reprocess(id string) error {
+	if e.Running(id) {
+		return fmt.Errorf("%w: job is still running; cancel it first", ErrBusy)
+	}
+	d, err := e.St.Disc(id)
+	if err != nil {
+		return err
+	}
+	if d.State != store.Cancelled && d.State != store.Failed {
+		return fmt.Errorf("only a cancelled or failed job can be processed again")
+	}
+	for _, s := range d.Sides {
+		if !s.Imaged {
+			return fmt.Errorf("side %s was never fully read; use Resume with the disc", s.Letter)
+		}
+		if _, err := os.Stat(e.imagePath(id, s.Letter)); err != nil {
+			return fmt.Errorf("side %s's image is gone (it's deleted after a successful finish or clean-up)", s.Letter)
+		}
+	}
+	d, err = e.update(id, func(d *store.Disc) error {
+		d.ForceRaw = false
+		d.State, d.Message, d.Warnings = store.Processing, "", nil
+		for _, s := range d.Sides {
+			s.Extracted, s.Processed, s.Error, s.Step = false, false, "", ""
+			s.Decision = discinfo.Decision{}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	_ = os.RemoveAll(filepath.Join(e.workDir(id), "out"))
+	_ = os.RemoveAll(filepath.Join(e.workDir(id), "thumbs"))
+	for _, s := range d.Sides {
+		_ = e.St.DeleteClips(id, s.Letter)
+		_ = os.RemoveAll(e.sourceDir(id, s.Letter))
 	}
 	e.resumeProcessing(d)
 	return nil

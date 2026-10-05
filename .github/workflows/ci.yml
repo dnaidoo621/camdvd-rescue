@@ -23,7 +23,7 @@ jobs:
       - name: Media tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq dvdauthor genisoimage 7zip libimage-exiftool-perl gddrescue sg3-utils dvd+rw-tools lsscsi
+          sudo apt-get install -y -qq dvdauthor genisoimage udftools 7zip libimage-exiftool-perl gddrescue sg3-utils dvd+rw-tools lsscsi
           . scripts/versions.env
           curl -fsSL -o /tmp/ff.tar.xz "https://github.com/BtbN/FFmpeg-Builds/releases/download/$FFMPEG_TAG/$FFMPEG_ASSET"
           echo "$FFMPEG_SHA256  /tmp/ff.tar.xz" | sha256sum -c -

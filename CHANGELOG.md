@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.4 — 2026-10-05
+
+- **DVD-RAM:** Panasonic camcorder DVD-RAM discs (UDF 2.00) couldn't be
+  read by 7-Zip, so they fell back to raw carving and lost their dates. A
+  built-in, read-only UDF reader now lists and extracts them when 7-Zip
+  can't, and `dvd-vr` splits the recordings with each one's date and time.
+  Found on a real disc: 45 dated recordings instead of 47 undated fragments.
+- **Process again:** a cancelled or failed job can be classified and
+  extracted again from its saved image, without the disc.
+
 ## v0.1.3 — 2026-10-05
 
 - **Fix:** unfinalized discs from cameras that restart the stream clock

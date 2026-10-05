@@ -104,6 +104,8 @@ func (s *Server) jobAction(id, action string) error {
 		return s.E.Resume(id)
 	case "force-raw":
 		return s.E.ForceRaw(id)
+	case "reprocess":
+		return s.E.Reprocess(id)
 	case "import-again":
 		return s.E.ConfirmDuplicate(id)
 	case "add-side":

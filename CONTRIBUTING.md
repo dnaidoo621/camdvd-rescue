@@ -23,7 +23,7 @@ You need Linux x64 for the drive code and the full test suite. Go version: see
 `go.mod`.
 
 ```sh
-sudo apt install dvdauthor genisoimage 7zip libimage-exiftool-perl gddrescue sg3-utils dvd+rw-tools lsscsi
+sudo apt install dvdauthor genisoimage udftools 7zip libimage-exiftool-perl gddrescue sg3-utils dvd+rw-tools lsscsi
 # An FFmpeg 7+ with dvdvideo, libx264 and bwdif; the pinned one:
 . scripts/versions.env
 curl -fsSLO "https://github.com/BtbN/FFmpeg-Builds/releases/download/$FFMPEG_TAG/$FFMPEG_ASSET"

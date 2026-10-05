@@ -17,6 +17,7 @@ come from the same origin.
 | POST | `/api/jobs/{id}/cancel` | | |
 | POST | `/api/jobs/{id}/resume` | | |
 | POST | `/api/jobs/{id}/force-raw` | | Re-process from the image with raw recovery |
+| POST | `/api/jobs/{id}/reprocess` | | Classify and extract a cancelled or failed job again from its saved image |
 | POST | `/api/jobs/{id}/import-again` | | Answer "Import again?" with yes |
 | POST | `/api/jobs/{id}/add-side` | | Reopen a finished disc for side B |
 | DELETE | `/api/jobs/{id}` | | Forget a finished job and its working files (MP4s stay) |
