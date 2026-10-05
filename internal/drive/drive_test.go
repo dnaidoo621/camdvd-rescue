@@ -206,3 +206,16 @@ func TestCopyLoopSkipsGapsBetweenExtents(t *testing.T) {
 		t.Errorf("%d reads; gaps should not be read at all", reads)
 	}
 }
+
+func TestBlocksPerTransfer(t *testing.T) {
+	dir := t.TempDir()
+	if got := BlocksPerTransfer(dir); got != 32 {
+		t.Errorf("unknown limit: %d", got)
+	}
+	for kb, want := range map[string]int64{"120": 60, "512": 64, "1280\n": 64, "1": 32, "junk": 32} {
+		os.WriteFile(filepath.Join(dir, "max_hw_sectors_kb"), []byte(kb), 0o644)
+		if got := BlocksPerTransfer(dir); got != want {
+			t.Errorf("max_hw_sectors_kb=%q: %d, want %d", kb, got, want)
+		}
+	}
+}
