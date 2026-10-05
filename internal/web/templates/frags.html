@@ -118,7 +118,7 @@
 {{/* ---------- The two questions ---------- */}}
 {{define "answers"}}
 {{$d := .Disc}}
-<form id="answers-{{$d.ID}}" class="answers" hx-post="/ui/jobs/{{$d.ID}}/answers" hx-swap="outerHTML" hx-preserve="true">
+<form id="answers-{{$d.ID}}" class="answers" hx-post="/ui/jobs/{{$d.ID}}/answers" hx-swap="outerHTML">
   <fieldset class="sides">
     <legend>Is this disc single or double-sided?</legend>
     <label><input type="radio" name="sides" value="1" {{if ne .LastSides 2}}checked{{end}}> Single-sided</label>

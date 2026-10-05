@@ -46,6 +46,9 @@ func (e *Engine) processSide(ctx context.Context, id, letter string) error {
 	if err != nil {
 		return err
 	}
+	if d.State == store.Cancelled {
+		return nil
+	}
 	s := d.Side(letter)
 	if s == nil || !s.Imaged {
 		return nil

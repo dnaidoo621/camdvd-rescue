@@ -4,7 +4,13 @@
 // A DVD video stream is a sequence of 2048-byte packs, each starting with an
 // MPEG-2 pack header (00 00 01 BA) on a sector boundary. Consecutive packs form
 // a run. A recording ends where the run is broken by a non-video sector or the
-// stream clock (SCR) jumps, because each camcorder recording restarts its clock.
+// stream clock (SCR) jumps.
+//
+// A clock jump alone isn't enough: camcorders such as Hitachi's restart the
+// SCR every ~21.6 s inside one recording. Their video timecode (in each GOP
+// header) does restart at 00:00:00 for a new recording and carries on across
+// those internal resets, so a jump whose next GOP continues the timecode
+// stays in the same clip.
 package carve
 
 import (
@@ -52,14 +58,60 @@ type Clip struct {
 	FirstSCR   uint64    `json:"first_scr"`
 	LastSCR    uint64    `json:"last_scr"`
 	BadSectors int64     `json:"bad_sectors"`
+	// Elapsed is the clock time of earlier SCR segments in this clip, in
+	// 90 kHz ticks; FirstSCR is the start of the current segment.
+	Elapsed uint64 `json:"elapsed"`
+	// Resets counts SCR restarts bridged by a continuing timecode.
+	Resets int `json:"resets,omitempty"`
 }
 
-// Duration is the clip length estimated from its stream clock.
+// Duration is the clip length from its stream clock, across SCR resets.
 func (c Clip) Duration() float64 {
-	if c.LastSCR <= c.FirstSCR {
-		return 0
+	span := c.Elapsed
+	if c.LastSCR > c.FirstSCR {
+		span += c.LastSCR - c.FirstSCR
 	}
-	return float64(c.LastSCR-c.FirstSCR) / SCRHz
+	return float64(span) / SCRHz
+}
+
+var gopStart = []byte{0x00, 0x00, 0x01, 0xB8}
+
+// GOPTimecode finds an MPEG-2 GOP header in b and returns its time_code as
+// an ordered value ((h*60+m)*60+s)*64+pictures, or -1 if there is none.
+func GOPTimecode(b []byte) int64 {
+	i := bytes.Index(b, gopStart)
+	if i < 0 || i+8 > len(b) {
+		return -1
+	}
+	v := uint32(b[i+4])<<24 | uint32(b[i+5])<<16 | uint32(b[i+6])<<8 | uint32(b[i+7])
+	t := v >> 7 // drop(1) hours(5) minutes(6) marker(1) seconds(6) pictures(6)
+	if t>>12&1 == 0 {
+		return -1 // marker bit missing: not a real GOP header
+	}
+	h, m, s, p := int64(t>>19&31), int64(t>>13&63), int64(t>>6&63), int64(t&63)
+	if m > 59 || s > 59 {
+		return -1
+	}
+	return ((h*60+m)*60+s)*64 + p
+}
+
+// firstTimecode reads ahead from lba for the next GOP timecode.
+func firstTimecode(r io.ReaderAt, lba, total int64) int64 {
+	n := min(int64(64), total-lba)
+	if n <= 0 {
+		return -1
+	}
+	b := make([]byte, n*SectorSize)
+	k, _ := r.ReadAt(b, lba*SectorSize)
+	for off := 0; off+SectorSize <= k; off += SectorSize {
+		if _, ok := ParseSCR(b[off:]); !ok {
+			return -1
+		}
+		if tc := GOPTimecode(b[off+14 : off+SectorSize]); tc >= 0 {
+			return tc
+		}
+	}
+	return -1
 }
 
 var packStart = []byte{0x00, 0x00, 0x01, 0xBA}
@@ -100,6 +152,7 @@ func Scan(r io.ReaderAt, size int64, opt Options) ([]Clip, error) {
 	// bridged if the stream resumes with a continuous clock.
 	var pendingBad int64
 	var lastSCR uint64
+	lastTC := int64(-1) // latest GOP timecode in the current clip
 
 	closeClip := func() {
 		if cur != nil && cur.Sectors >= opt.MinSectors {
@@ -108,6 +161,7 @@ func Scan(r io.ReaderAt, size int64, opt Options) ([]Clip, error) {
 		}
 		cur = nil
 		pendingBad = 0
+		lastTC = -1
 	}
 	addSector := func(lba int64) {
 		n := len(cur.Segments)
@@ -143,7 +197,14 @@ func Scan(r io.ReaderAt, size int64, opt Options) ([]Clip, error) {
 				backward := scr < lastSCR
 				jump := scr > lastSCR && scr-lastSCR > maxJump
 				if backward || jump {
-					closeClip()
+					// Same recording if the video timecode carries on.
+					if tc := firstTimecode(r, lba, total); lastTC > 0 && tc > 0 && tc >= lastTC {
+						cur.Elapsed += lastSCR - cur.FirstSCR
+						cur.FirstSCR = scr
+						cur.Resets++
+					} else {
+						closeClip()
+					}
 				}
 			}
 			if cur == nil {
@@ -151,6 +212,9 @@ func Scan(r io.ReaderAt, size int64, opt Options) ([]Clip, error) {
 			}
 			cur.BadSectors += pendingBad
 			pendingBad = 0
+			if tc := GOPTimecode(sec[14:]); tc >= 0 {
+				lastTC = tc
+			}
 			addSector(lba)
 			cur.LastSCR = scr
 			lastSCR = scr

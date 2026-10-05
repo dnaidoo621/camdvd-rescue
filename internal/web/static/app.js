@@ -51,6 +51,45 @@
     }
   });
 
+  // Live updates redraw job cards several times a second while a disc is
+  // read. Keep what's being typed into an answers form, and the cursor,
+  // across each redraw.
+  var kept = [];
+  document.body.addEventListener("htmx:beforeSwap", function (ev) {
+    kept = [];
+    var target = ev.detail.target;
+    if (!target || !target.querySelectorAll) return;
+    var forms = Array.prototype.slice.call(target.querySelectorAll("form.answers"));
+    if (target.matches && target.matches("form.answers")) forms.push(target);
+    forms.forEach(function (f) {
+      if (f === ev.detail.requestConfig.elt) return; // the form's own submit
+      var desc = f.querySelector("input[name=description]");
+      var side = f.querySelector("input[name=sides]:checked");
+      var focused = document.activeElement === desc;
+      kept.push({
+        id: f.id, desc: desc ? desc.value : "", side: side ? side.value : null, focused: focused,
+        start: focused ? desc.selectionStart : null, end: focused ? desc.selectionEnd : null
+      });
+    });
+  });
+  document.body.addEventListener("htmx:afterSwap", function () {
+    kept.forEach(function (k) {
+      var f = document.getElementById(k.id);
+      if (!f) return;
+      var desc = f.querySelector("input[name=description]");
+      if (desc) desc.value = k.desc;
+      if (k.side) {
+        var r = f.querySelector("input[name=sides][value='" + k.side + "']");
+        if (r) r.checked = true;
+      }
+      if (k.focused && desc) {
+        desc.focus({ preventScroll: true });
+        try { desc.setSelectionRange(k.start, k.end); } catch (e) {}
+      }
+    });
+    kept = [];
+  });
+
   // A rename preview on page load when a folder is preselected.
   document.addEventListener("DOMContentLoaded", function () {
     var form = document.querySelector("form.rename");

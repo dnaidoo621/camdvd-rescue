@@ -40,6 +40,12 @@ func (e *Engine) recover() error {
 			if dc != nil {
 				dc.holder = d.ID
 			}
+			// Imaged sides keep converting while the drive waits.
+			for _, s := range d.Sides {
+				if s.Imaged && !s.Processed {
+					e.goProcess(d.ID, s.Letter)
+				}
+			}
 			if d.State == store.AwaitingAnswer {
 				// The disc is (probably) still in the tray; wait for the answer.
 				id := d.ID

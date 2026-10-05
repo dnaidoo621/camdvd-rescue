@@ -33,6 +33,10 @@ type Source struct {
 	RecTime    time.Time `json:"rec_time,omitzero"`
 	DateSource string    `json:"date_source,omitempty"`
 	BadSectors int64     `json:"bad_sectors,omitempty"`
+	// Duration is the length known from the disc structure (carved clips),
+	// used when ffprobe's estimate is wrong: it reads only the first clock
+	// segment of a stream whose SCR restarts mid-recording.
+	Duration float64 `json:"duration,omitempty"`
 }
 
 // InputArgs are the FFmpeg arguments that open the source.
@@ -274,7 +278,8 @@ func CarveSources(img, mapPath, outDir string) ([]Source, []carve.Clip, error) {
 		if err := w.Close(); err != nil {
 			return nil, nil, err
 		}
-		out = append(out, Source{Kind: "file", Path: p, Label: fmt.Sprintf("carved recording %d (~%.0f s)", c.Index, c.Duration()), BadSectors: c.BadSectors})
+		out = append(out, Source{Kind: "file", Path: p, Label: fmt.Sprintf("carved recording %d (~%.0f s)", c.Index, c.Duration()),
+			BadSectors: c.BadSectors, Duration: c.Duration()})
 	}
 	return out, clips, nil
 }

@@ -32,6 +32,13 @@ clip rec3 "$SECS" 16:9 180
 clip rec4 "$SECS" 16:9 270
 clip recB1 "$SECS" 4:3 45
 clip recB2 "$SECS" 4:3 135
+# One recording in two clock segments, like a Hitachi camcorder writes: the
+# second part's clock restarts but its GOP timecode carries on.
+"$FFMPEG" -hide_banner -loglevel error -y -f lavfi -i "testsrc2=size=720x576:rate=25,drawtext=text='long':fontsize=64:fontcolor=white:x=40:y=40" \
+  -f lavfi -i "sine=frequency=500:sample_rate=48000" -t "$SECS" -target pal-dvd -flags +ilme+ildct -top 1 -b:v 4000k clips/long1.mpg
+"$FFMPEG" -hide_banner -loglevel error -y -f lavfi -i "testsrc2=size=720x576:rate=25,drawtext=text='long':fontsize=64:fontcolor=white:x=40:y=40" \
+  -f lavfi -i "sine=frequency=500:sample_rate=48000" -t "$SECS" -target pal-dvd -flags +ilme+ildct -top 1 -b:v 4000k \
+  -timecode "00:00:$(printf %02d "$SECS"):00" clips/long2.mpg
 
 sidecar() { # file type status session next
   printf '{"type":"%s","disc_status":"%s","session_state":"%s","next_writable":%s}\n' "$2" "$3" "$4" "$5" >"$1.media.json"
@@ -87,7 +94,7 @@ raw unfinalized-b.img recB1 recB2
   dd if=/dev/zero of=tracks.tmp bs=2048 count=528 conv=notrunc status=none
   dd if=/dev/zero of=tracks.tmp bs=2048 seek=600 count=5400 conv=notrunc status=none
   dd if=/dev/zero of=tracks.tmp bs=2048 seek=6064 count=16 conv=notrunc status=none
-  cat clips/rec1.mpg clips/rec2.mpg clips/rec3.mpg >>tracks.tmp
+  cat clips/rec1.mpg clips/long1.mpg clips/long2.mpg clips/rec3.mpg >>tracks.tmp
   last=$(( $(stat -c %s tracks.tmp) / 2048 ))
   head -c $((2048 * 16)) /dev/zero >>tracks.tmp
   mv tracks.tmp unfinalized-tracks.img
