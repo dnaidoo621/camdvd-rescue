@@ -30,6 +30,46 @@
 </section>
 {{end}}
 
+{{/* ---------- Overview ---------- */}}
+{{define "overview"}}
+<section id="overview" class="overview panel" hx-get="/ui/overview" hx-trigger="sse:queue throttle:2s, sse:jobs, every 30s" hx-swap="outerHTML">
+  {{range .Stuck}}<p class="flash bad">⚠ {{.}}</p>{{end}}
+  <div class="stats">
+    <div class="stat"><span class="num">{{len .Reading}}</span><span class="label">reading</span></div>
+    <div class="stat"><span class="num">{{len .Encoding}}</span><span class="label">converting now</span></div>
+    <div class="stat"><span class="num">{{.ClipsLeft}}</span><span class="label">clips queued</span></div>
+    <div class="stat"><span class="num">{{mins .MinutesLeft}}</span><span class="label">of footage left</span></div>
+    <div class="stat {{if .Waiting}}attn{{end}}"><span class="num">{{len .Waiting}}</span><span class="label">waiting for you</span></div>
+    <div class="stat"><span class="num">{{.DoneToday}}</span><span class="label">finished today</span></div>
+  </div>
+  {{if not .ETA.IsZero}}<p class="eta">All conversions done in <strong>{{until .ETA}}</strong>
+    <span class="meta">at {{printf "%.2f" .Speed}}× real time{{if not .Measured}} (estimate until the first clip finishes){{end}} · {{.Settings}} · <a href="/settings">change</a></span></p>{{end}}
+  {{range .Encoding}}
+  <div class="now">
+    <span class="meta">Converting</span> <a href="/jobs/{{.DiscID}}">{{.Title}}</a> · {{.Clip}}
+    <div class="bar small"><span style="width:{{pct .Frac}}"></span></div>
+  </div>
+  {{end}}
+  {{range .Reading}}<div class="now"><span class="meta">Reading</span> <a href="/jobs/{{.ID}}">{{.Title}}</a> · {{pct .Frac}}<div class="bar small"><span style="width:{{pct .Frac}}"></span></div></div>{{end}}
+  {{if .Discs}}
+  <table class="queue">
+    <thead><tr><th>Disc</th><th>Converted</th><th></th><th>Footage left</th></tr></thead>
+    <tbody>
+    {{range .Discs}}
+      <tr>
+        <td><a href="/jobs/{{.ID}}">{{.Title}}</a>{{if .Failed}} <span class="pill bad">{{.Failed}} failed</span>{{end}}</td>
+        <td>{{.Done}} / {{.Total}}</td>
+        <td class="barcell"><div class="bar small"><span style="width:{{pct (fracOf .Done .Total)}}"></span></div></td>
+        <td class="meta">{{mins .MinutesLeft}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{end}}
+  {{range .Waiting}}<p class="meta">⏸ <a href="/jobs/{{.ID}}">{{.Title}}</a>: {{.State}}{{with .Note}} — {{.}}{{end}}</p>{{end}}
+</section>
+{{end}}
+
 {{/* ---------- Active jobs list ---------- */}}
 {{define "active"}}
 <section id="active" hx-get="/ui/active" hx-trigger="sse:jobs" hx-swap="outerHTML">
@@ -76,9 +116,16 @@
     {{end}}
     {{with .Error}}<p class="flash bad">{{.}}</p>{{end}}
     {{$clips := sidesClips $.Clips .Letter}}
-    {{if $clips}}
+    {{$shown := $clips}}
+    {{if and (compact $clips) (not $.Detail)}}
+      {{$done := countDone $clips}}
+      <div class="meta">{{$done}} of {{len $clips}} recordings converted · <a href="/jobs/{{$.Disc.ID}}">show all</a></div>
+      <div class="bar"><span style="width:{{pct (fracOf $done (len $clips))}}"></span></div>
+      {{$shown = busyClips $clips}}
+    {{end}}
+    {{if $shown}}
     <ol class="clips">
-      {{range $clips}}
+      {{range $shown}}
       <li class="clip">
         {{if .Thumb}}<button class="thumb" data-play="/api/files/{{.ID}}/stream" data-title="{{.Side}}{{printf "%02d" .Num}}{{with .Output}} · {{base .}}{{end}}" aria-label="Play {{.Side}}{{printf "%02d" .Num}}"><img src="/api/files/{{.ID}}/thumb" alt="" loading="lazy" width="96" height="54"></button>
         {{else}}<div class="thumb ph" aria-hidden="true"></div>{{end}}

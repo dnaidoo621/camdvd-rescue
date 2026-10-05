@@ -134,6 +134,21 @@ form.inline select { width: auto; }
 .panel, .card, .drive { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
 .panel { padding: 1rem 1.1rem; margin: 1rem 0; }
 
+/* Overview */
+.overview { margin-top: 0; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .5rem; }
+.stat { background: var(--surface-2); border-radius: 8px; padding: .55rem .7rem; display: flex; flex-direction: column; }
+.stat .num { font-size: 1.35rem; font-weight: 700; line-height: 1.2; }
+.stat .label { font-size: .8rem; color: var(--muted); }
+.stat.attn { background: var(--attn-bg); color: var(--attn); }
+.stat.attn .label { color: var(--attn); }
+.eta { margin: .75rem 0 .25rem; }
+.now { margin: .35rem 0; }
+.now .bar { margin-top: .25rem; }
+table.queue { margin-top: .6rem; background: none; }
+table.queue td.barcell { width: 30%; min-width: 80px; }
+table.queue .bar { margin: .35rem 0; max-width: none; }
+
 /* Drives */
 .drives { display: grid; gap: .75rem; margin-bottom: 1rem; }
 .drive { padding: .75rem 1rem; }

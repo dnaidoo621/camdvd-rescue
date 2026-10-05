@@ -120,6 +120,7 @@ func (s *Server) Handler() http.Handler {
 	// htmx fragments.
 	m.HandleFunc("GET /ui/drives", s.fragDrives)
 	m.HandleFunc("GET /ui/active", s.fragActive)
+	m.HandleFunc("GET /ui/overview", s.fragOverview)
 	m.HandleFunc("GET /ui/jobs/{id}/card", s.fragCard)
 	m.HandleFunc("POST /ui/jobs/{id}/answers", s.uiAnswers)
 	m.HandleFunc("POST /ui/jobs/{id}/{action}", s.uiJobAction)
@@ -135,6 +136,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /ui/rename/undo/{id}", s.uiRenameUndo)
 
 	// JSON API (see the spec's API table).
+	m.HandleFunc("GET /api/status", s.apiStatus)
 	m.HandleFunc("GET /api/drives", s.apiDrives)
 	m.HandleFunc("POST /api/drives/{id}/eject", s.apiEject)
 	m.HandleFunc("POST /api/drives/{id}/insert", s.apiInsert)

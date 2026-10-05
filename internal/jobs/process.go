@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dnaidoo621/camdvd-rescue/internal/config"
 	"github.com/dnaidoo621/camdvd-rescue/internal/discinfo"
 	"github.com/dnaidoo621/camdvd-rescue/internal/pipeline"
 	"github.com/dnaidoo621/camdvd-rescue/internal/store"
@@ -68,13 +67,12 @@ func (e *Engine) processSide(ctx context.Context, id, letter string) error {
 	if err != nil {
 		return err
 	}
-	set := e.Settings()
 	e.setStep(id, letter, "converting")
 	for _, c := range clips {
 		if c.Side != letter || c.Done() {
 			continue
 		}
-		if err := e.convertClip(ctx, c, set); err != nil {
+		if err := e.convertClip(ctx, c); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -181,6 +179,10 @@ func (e *Engine) extractSide(ctx context.Context, d *store.Disc, letter string) 
 	}
 	for i, src := range sources {
 		c := &store.Clip{DiscID: id, Side: letter, Num: i + 1, Source: src, State: "pending"}
+		// Probe now so durations and time estimates are known up front.
+		if in, err := pipeline.Probe(ctx, e.Tools, src); err == nil {
+			c.Info = in
+		}
 		if err := e.St.AddClip(c); err != nil {
 			return err
 		}
@@ -245,7 +247,9 @@ func (e *Engine) carve(ctx context.Context, id, letter, img, mp, src string) ([]
 }
 
 // convertClip verifies one source and converts it into the work folder.
-func (e *Engine) convertClip(ctx context.Context, c *store.Clip, set config.Settings) error {
+// Settings are read when the clip's encode starts, so a change in Settings
+// applies from the next clip without a restart.
+func (e *Engine) convertClip(ctx context.Context, c *store.Clip) error {
 	id := c.DiscID
 	info, err := pipeline.Probe(ctx, e.Tools, c.Source)
 	if err != nil {
@@ -272,6 +276,7 @@ func (e *Engine) convertClip(ctx context.Context, c *store.Clip, set config.Sett
 		return ctx.Err()
 	}
 	defer func() { <-e.convSem }()
+	set := e.Settings()
 
 	need := int64(info.Duration * 2e6) // ~16 Mb/s ceiling for CRF 16 at 50p
 	for {
@@ -294,14 +299,27 @@ func (e *Engine) convertClip(ctx context.Context, c *store.Clip, set config.Sett
 	c.State, c.Progress, c.Error = "converting", 0, ""
 	_ = e.St.SaveClip(c)
 	e.Hub.Publish("job-"+id, "")
-	opts := pipeline.EncodeOptions{Preset: set.Preset, HWAccel: set.HWAccel}
-	r, err := pipeline.Convert(ctx, e.Tools, c.Source, info, opts, out, func(f float64) {
+	opts := pipeline.EncodeOptions{Preset: set.Preset, Speed: set.Speed, HWAccel: set.HWAccel}
+	started := time.Now()
+	e.encodeStarted(c)
+	defer e.encodeEnded(c)
+	progress := func(f float64) {
+		e.encodeProgress(c, f)
 		if e.Hub.Throttled(fmt.Sprintf("clip-%d", c.ID), "", 750*time.Millisecond) {
 			c.Progress = f
 			_ = e.St.SaveClip(c)
 			e.Hub.Publish("job-"+id, "")
 		}
-	})
+	}
+	r, err := pipeline.Convert(ctx, e.Tools, c.Source, info, opts, out, progress)
+	if err != nil && opts.HWAccel != "" && ctx.Err() == nil {
+		// Hardware encoders fail on some hosts (driver or libva too old for
+		// the bundled FFmpeg); x264 always works.
+		e.Log.Warn("hardware encode failed; using x264", "disc", id, "clip", c.ID, "hwaccel", opts.HWAccel, "stderr", r.Stderr)
+		c.Warnings = append(c.Warnings, opts.HWAccel+" hardware encoding failed on this machine; encoded with x264")
+		opts.HWAccel = ""
+		r, err = pipeline.Convert(ctx, e.Tools, c.Source, info, opts, out, progress)
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -309,6 +327,7 @@ func (e *Engine) convertClip(ctx context.Context, c *store.Clip, set config.Sett
 		e.Log.Error("convert failed", "disc", id, "clip", c.ID, "cmd", r.CmdLine, "stderr", r.Stderr)
 		return fmt.Errorf("conversion failed: %w", err)
 	}
+	e.encodeSpeed(info.Duration, time.Since(started))
 	thumb := filepath.Join(e.workDir(id), "thumbs", fmt.Sprintf("%d.jpg", c.ID))
 	if err := pipeline.Thumbnail(ctx, e.Tools, out, info.Duration, thumb); err == nil {
 		c.Thumb = thumb

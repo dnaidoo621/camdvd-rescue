@@ -8,6 +8,10 @@ import (
 	"github.com/dnaidoo621/camdvd-rescue/internal/store"
 )
 
+func (s *Server) apiStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.E.Overview())
+}
+
 func (s *Server) apiDrives(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.E.Drives())
 }

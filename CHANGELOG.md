@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.1.6 — 2026-10-05
+
+- **Overview** on the Discs page: what's reading and converting, clips and
+  minutes of footage left, measured speed and an estimated finish time,
+  per-disc progress, discs waiting for you, and a warning when something
+  stops making progress. Also as JSON at `GET /api/status`.
+- **Faster by default:** new *Encoding speed* setting; Balanced (x264
+  medium) is the default — 1.6× faster than before for a quality difference
+  of 0.05 dB SSIM, measured on camcorder footage. Best (slow) and Fast
+  (faster) are still there. Settings now apply from the next clip without a
+  restart.
+- Disc cards with many recordings show a progress bar and the current clip
+  instead of every row.
+- Clip lengths are probed when a disc is split, so totals are known up front.
+- If hardware encoding fails, the clip is encoded with x264 instead of
+  failing; the self-check tests VAAPI.
+- A demo instance no longer auto-discovers real drives.
+
 ## v0.1.5 — 2026-10-05
 
 - **Fix:** "Process again" kept the first run's "file system couldn't be

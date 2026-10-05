@@ -14,9 +14,16 @@
       <label><input type="radio" name="preset" value="copy" {{if eq $s.Preset "copy"}}checked{{end}}> Copy only <span class="meta">MPEG-2 remuxed to MKV, no quality loss, no Photos tags</span></label>
     </fieldset>
     <fieldset>
+      <legend>Encoding speed</legend>
+      <label><input type="radio" name="speed" value="best" {{if eq $s.Speed "best"}}checked{{end}}> Best <span class="meta">x264 slow; ~1.6× slower than Balanced for a difference you won't see</span></label>
+      <label><input type="radio" name="speed" value="balanced" {{if or (eq $s.Speed "balanced") (eq $s.Speed "")}}checked{{end}}> Balanced <span class="meta">x264 medium (default)</span></label>
+      <label><input type="radio" name="speed" value="fast" {{if eq $s.Speed "fast"}}checked{{end}}> Fast <span class="meta">x264 faster; ~2× faster than Balanced, very slightly softer</span></label>
+      <p class="meta">Applies from the next clip; nothing restarts.</p>
+    </fieldset>
+    <fieldset>
       <legend>Hardware encoding</legend>
       <label><input type="radio" name="hwaccel" value="" {{if eq $s.HWAccel ""}}checked{{end}}> Off <span class="meta">x264, best quality per byte</span></label>
-      <label><input type="radio" name="hwaccel" value="vaapi" {{if eq $s.HWAccel "vaapi"}}checked{{end}}> VAAPI <span class="meta">Intel/AMD, needs /dev/dri and the render group</span></label>
+      <label><input type="radio" name="hwaccel" value="vaapi" {{if eq $s.HWAccel "vaapi"}}checked{{end}}> VAAPI <span class="meta">Intel/AMD, needs /dev/dri and the render group; check Doctor that it works here. Clips fall back to x264 if it fails</span></label>
       <label><input type="radio" name="hwaccel" value="nvenc" {{if eq $s.HWAccel "nvenc"}}checked{{end}}> NVENC <span class="meta">NVIDIA</span></label>
     </fieldset>
     <fieldset>

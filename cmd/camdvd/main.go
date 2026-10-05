@@ -103,7 +103,9 @@ func logger() *slog.Logger {
 func drivesFrom(ctx context.Context, cfg config.Config, ts tools.Set, log *slog.Logger) []drive.Drive {
 	var ds []drive.Drive
 	conf := cfg.Drives
-	if len(conf) == 0 {
+	// Discover real drives only outside demo mode, so a demo instance never
+	// grabs the drives a real service is using.
+	if len(conf) == 0 && cfg.DemoImages == "" {
 		found, err := drive.Discover(ctx, ts)
 		if err != nil {
 			log.Warn("drive discovery failed", "err", err)

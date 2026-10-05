@@ -77,6 +77,9 @@ func Run(ctx context.Context, cfg config.Config, ts tools.Set, drives []drive.Dr
 		}
 	}
 
+	if c, ok := checkVAAPI(ctx, ts); ok {
+		add(c)
+	}
 	add(checkWritable("library", cfg.Library, cfg.MinFreeGB))
 	add(checkWritable("state", cfg.StateDir, 0))
 	return r
@@ -141,6 +144,36 @@ func checkDrive(ctx context.Context, ts tools.Set, d drive.Drive) []Check {
 		Detail: "loading mechanism: " + loader + map[bool]string{true: " — 8cm discs can jam in slot-loading drives", false: ""}[slot],
 		Fix:    map[bool]string{true: "Use a tray-loading drive for 8cm discs", false: ""}[slot]})
 	return out
+}
+
+// checkVAAPI tries a one-frame hardware encode when a GPU is present. It
+// only warns: conversions fall back to x264 when VAAPI fails.
+func checkVAAPI(ctx context.Context, ts tools.Set) (Check, bool) {
+	const dev = "/dev/dri/renderD128"
+	if _, err := os.Stat(dev); err != nil {
+		return Check{}, false
+	}
+	c := Check{Group: "tools", Name: "VAAPI hardware encoding", OK: true}
+	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	r, err := ts.Run(cctx, tools.Cmd{Name: "ffmpeg", Args: []string{"-hide_banner", "-nostdin", "-v", "error",
+		"-vaapi_device", dev, "-f", "lavfi", "-i", "color=c=black:s=320x240:d=0.2", "-vf", "format=nv12,hwupload",
+		"-c:v", "h264_vaapi", "-f", "null", "-"}})
+	if err != nil {
+		c.OK, c.Warn = false, true
+		msg := strings.TrimSpace(r.Stderr)
+		if i := strings.LastIndexByte(msg, '\n'); i >= 0 {
+			msg = msg[i+1:]
+		}
+		if len(msg) > 160 {
+			msg = msg[:160]
+		}
+		c.Detail = "not usable here (" + msg + "); x264 is used"
+		c.Fix = "Optional. Needs the render group (re-run the installer with --hwaccel) and a libva new enough for the bundled FFmpeg"
+		return c, true
+	}
+	c.Detail = "works (" + dev + ")"
+	return c, true
 }
 
 func checkWritable(name, dir string, minGB float64) Check {

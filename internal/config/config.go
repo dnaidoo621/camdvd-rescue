@@ -115,6 +115,7 @@ func (c Config) Write(path string) error {
 // Settings are changed from the UI and stored in the database.
 type Settings struct {
 	Preset     string   `json:"preset"`   // archive, standard, small, copy
+	Speed      string   `json:"speed"`    // best, balanced, fast (x264 slow, medium, faster)
 	Split      string   `json:"split"`    // chapter or title, for DVD-Video
 	HWAccel    string   `json:"hwaccel"`  // "", vaapi, nvenc
 	TimeZone   string   `json:"timezone"` // IANA zone
@@ -133,6 +134,7 @@ type Settings struct {
 func DefaultSettings() Settings {
 	return Settings{
 		Preset:     "standard",
+		Speed:      "balanced",
 		Split:      "chapter",
 		TimeZone:   "Africa/Johannesburg",
 		ResetDates: []string{"2004-01-01"},
