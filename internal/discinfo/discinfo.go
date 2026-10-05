@@ -22,6 +22,54 @@ type Media struct {
 	// value may be wrong, which is why raw reads use NextWritable instead.
 	Capacity int64 `json:"capacity"`
 	NoMedia  bool  `json:"no_media"`
+	// Tracks are the drive's track table. A camcorder's open DVD-R has
+	// several, with unwritten gaps between them.
+	Tracks []Track `json:"tracks,omitempty"`
+}
+
+// Track is one entry of READ TRACK INFORMATION, in sectors.
+type Track struct {
+	State        string `json:"state"`
+	Start        int64  `json:"start"`
+	Size         int64  `json:"size"`
+	NextWritable int64  `json:"next_writable,omitempty"`
+	LastRecorded int64  `json:"last_recorded,omitempty"`
+}
+
+// Extent is a written sector range [Start, End).
+type Extent struct {
+	Start int64 `json:"start"`
+	End   int64 `json:"end"`
+}
+
+// written returns the track's written range, or false if nothing is written.
+func (t Track) written() (Extent, bool) {
+	switch {
+	case t.LastRecorded >= t.Start && t.LastRecorded > 0:
+		return Extent{t.Start, t.LastRecorded + 1}, true
+	case t.NextWritable > t.Start:
+		return Extent{t.Start, t.NextWritable}, true
+	case strings.HasPrefix(t.State, "complete") && t.Size > 0:
+		return Extent{t.Start, t.Start + t.Size}, true
+	}
+	return Extent{}, false
+}
+
+// Extents lists the written ranges to read from an open disc, in order.
+// Without a track table it falls back to [0, UsedSectors).
+func (m Media) Extents() []Extent {
+	var out []Extent
+	for _, t := range m.Tracks {
+		if e, ok := t.written(); ok {
+			out = append(out, e)
+		}
+	}
+	if len(out) == 0 {
+		if used := m.UsedSectors(); used > 0 {
+			out = []Extent{{0, used}}
+		}
+	}
+	return out
 }
 
 var (
@@ -31,7 +79,41 @@ var (
 	reStart    = regexp.MustCompile(`(?m)^\s*Track Start Address:\s*(\d+)\*2KB`)
 	reNext     = regexp.MustCompile(`(?m)^\s*Next Writable Address:\s*(\d+)\*2KB`)
 	reCapacity = regexp.MustCompile(`(?m)^\s*READ CAPACITY:\s*(\d+)\*2048`)
+	reTrackHdr = regexp.MustCompile(`(?m)^READ TRACK INFORMATION\[#\d+\]:`)
+	reTState   = regexp.MustCompile(`(?m)^\s*Track State:\s*(.+?)\s*$`)
+	reTSize    = regexp.MustCompile(`(?m)^\s*Track Size:\s*(\d+)\*2KB`)
+	reLastRec  = regexp.MustCompile(`(?m)^\s*Last Recorded Address:\s*(\d+)\*2KB`)
 )
+
+func parseTracks(out string) []Track {
+	idx := reTrackHdr.FindAllStringIndex(out, -1)
+	var ts []Track
+	for i, loc := range idx {
+		end := len(out)
+		if i+1 < len(idx) {
+			end = idx[i+1][0]
+		}
+		blk := out[loc[1]:end]
+		// The block ends where the next section header starts.
+		if j := regexp.MustCompile(`(?m)^[A-Z][A-Z ]+[\[:]`).FindStringIndex(blk); j != nil {
+			blk = blk[:j[0]]
+		}
+		var t Track
+		num := func(re *regexp.Regexp) int64 {
+			if s := re.FindStringSubmatch(blk); s != nil {
+				n, _ := strconv.ParseInt(s[1], 10, 64)
+				return n
+			}
+			return 0
+		}
+		if s := reTState.FindStringSubmatch(blk); s != nil {
+			t.State = strings.ToLower(s[1])
+		}
+		t.Start, t.Size, t.NextWritable, t.LastRecorded = num(reStart), num(reTSize), num(reNext), num(reLastRec)
+		ts = append(ts, t)
+	}
+	return ts
+}
 
 // ParseMediaInfo reads dvd+rw-mediainfo output. A disc with several tracks
 // lists each; the last track's addresses are kept, because that's the open
@@ -60,6 +142,7 @@ func ParseMediaInfo(out string) Media {
 	if s := reCapacity.FindStringSubmatch(out); s != nil {
 		m.Capacity, _ = strconv.ParseInt(s[1], 10, 64)
 	}
+	m.Tracks = parseTracks(out)
 	return m
 }
 
@@ -76,6 +159,17 @@ func (m Media) Open() bool {
 
 // UsedSectors is the size of the written area to read.
 func (m Media) UsedSectors() int64 {
+	if m.Open() {
+		var end int64
+		for _, t := range m.Tracks {
+			if e, ok := t.written(); ok {
+				end = max(end, e.End)
+			}
+		}
+		if end > 0 {
+			return max(end, m.NextWritable)
+		}
+	}
 	if m.Open() && m.NextWritable > 0 {
 		return m.NextWritable
 	}

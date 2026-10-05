@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.1.1 — 2026-10-05
+
+- **Fix:** unfinalized camcorder DVD-Rs with several tracks (a reserved
+  file-system track, small management tracks, unwritten gaps, then the
+  video) failed to start ("read fingerprint sample") and would have stopped
+  imaging at the first large unwritten gap, before the video. Raw imaging now
+  reads only the written ranges from the drive's track table, and the
+  fingerprint samples the end of the last written track. Found on a real
+  Hitachi disc in a Sony DRX-S90U.
+- **Security:** open redirect after login, demo drive accepting arbitrary
+  paths, cookie flags (from code scanning).
+- Fuzz tests for the disc-data parsers; release provenance attestations.
+
 ## v0.1.0 — 2026-10-04
 
 First release. Tested end to end against synthetic disc images and on an

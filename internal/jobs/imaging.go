@@ -182,6 +182,12 @@ func (e *Engine) imageSide(dc *driveCtl, id, letter string) {
 	if s.Method == discinfo.ImageRaw || total > 0 {
 		req.Sectors = total
 	}
+	if s.Method == discinfo.ImageRaw {
+		// Only the written tracks; camcorders leave large unwritten gaps.
+		for _, x := range s.Probe.Media.Extents() {
+			req.Extents = append(req.Extents, drive.Range{Start: x.Start, End: x.End})
+		}
+	}
 	res, err := dc.d.Image(ctx, req, func(p drive.Progress) {
 		if p.Total == 0 || !e.Hub.Throttled("img-"+id, "", 750*time.Millisecond) {
 			return

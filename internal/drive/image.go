@@ -99,10 +99,11 @@ func (d *ImageDrive) Eject(context.Context) error {
 }
 
 type sidecar struct {
-	Type         string `json:"type"`
-	DiscStatus   string `json:"disc_status"`
-	SessionState string `json:"session_state"`
-	NextWritable int64  `json:"next_writable"`
+	Type         string           `json:"type"`
+	DiscStatus   string           `json:"disc_status"`
+	SessionState string           `json:"session_state"`
+	NextWritable int64            `json:"next_writable"`
+	Tracks       []discinfo.Track `json:"tracks"`
 }
 
 func (d *ImageDrive) Probe(ctx context.Context) (discinfo.Probe, string, error) {
@@ -120,7 +121,7 @@ func (d *ImageDrive) Probe(ctx context.Context) (discinfo.Probe, string, error) 
 			return discinfo.Probe{}, "", fmt.Errorf("%s.media.json: %w", cur, err)
 		}
 	}
-	m := discinfo.Media{Type: sc.Type, DiscStatus: sc.DiscStatus, SessionState: sc.SessionState, NextWritable: sc.NextWritable}
+	m := discinfo.Media{Type: sc.Type, DiscStatus: sc.DiscStatus, SessionState: sc.SessionState, NextWritable: sc.NextWritable, Tracks: sc.Tracks}
 	if !m.Open() {
 		m.Capacity = fi.Size() / SectorSize
 	}
@@ -200,7 +201,7 @@ func (d *ImageDrive) Image(ctx context.Context, req ImageRequest, progress func(
 	if req.Method == discinfo.ImageRaw {
 		stop = 4096
 	}
-	res, err := copyLoop(ctx, read, total, req.Out, req.Map, stop, progress)
+	res, err := copyLoop(ctx, read, total, req.Extents, req.Out, req.Map, stop, progress)
 	res.CmdLines = []string{fmt.Sprintf("image-drive copy %s -> %s (%d sectors, %s)", filepath.Base(cur), req.Out, total, req.Method)}
 	return res, err
 }

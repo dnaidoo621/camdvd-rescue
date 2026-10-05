@@ -199,7 +199,7 @@ func (d *PhysicalDrive) Image(ctx context.Context, req ImageRequest, progress fu
 		if req.Sectors <= 0 {
 			return ImageResult{}, errors.New("raw imaging needs the next-writable address")
 		}
-		res, err := copyLoop(ctx, d.sgRead, req.Sectors, req.Out, req.Map, 4096, progress)
+		res, err := copyLoop(ctx, d.sgRead, req.Sectors, req.Extents, req.Out, req.Map, 4096, progress)
 		res.CmdLines = []string{fmt.Sprintf("sg_dd if=%s of=- bs=2048 (chunked, LBA 0..%d, stop after 4096 unreadable)", d.sg, req.Sectors)}
 		return res, err
 	}
