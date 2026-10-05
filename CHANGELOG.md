@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.2 — 2026-10-05
+
+- **Fix:** raw reads on USB drives failed outright: `sg_dd` asked for 64
+  sectors (128 KB) per transfer, but USB bridges such as the Sony DRX-S90U's
+  allow 120 KB. The transfer size now follows the kernel's limit for each
+  drive (`max_hw_sectors_kb`).
+
 ## v0.1.1 — 2026-10-05
 
 - **Fix:** unfinalized camcorder DVD-Rs with several tracks (a reserved

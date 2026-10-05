@@ -33,11 +33,29 @@ type PhysicalDrive struct {
 	id, block, sg string
 	tools         tools.Set
 	mu            sync.Mutex // one ioctl/tool at a time per drive
+	bpt           int64      // sectors per SCSI transfer the host allows
 }
 
 // NewPhysicalDrive wraps a drive; sg may be "" if raw reads aren't needed.
 func NewPhysicalDrive(id, block, sg string, ts tools.Set) *PhysicalDrive {
-	return &PhysicalDrive{id: id, block: block, sg: sg, tools: ts}
+	return &PhysicalDrive{id: id, block: block, sg: sg, tools: ts,
+		bpt: BlocksPerTransfer(filepath.Join("/sys/block", filepath.Base(block), "queue"))}
+}
+
+// BlocksPerTransfer is how many 2048-byte sectors one SCSI read may carry.
+// USB bridges often cap a transfer at 120 KB (60 sectors); asking for more
+// fails the whole read. It reads the kernel's limit for the device, never
+// going above 64 sectors, and falls back to 32 when the limit is unknown.
+func BlocksPerTransfer(queueDir string) int64 {
+	b, err := os.ReadFile(filepath.Join(queueDir, "max_hw_sectors_kb"))
+	if err != nil {
+		return 32
+	}
+	kb, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	if err != nil || kb < 2 {
+		return 32
+	}
+	return min(64, kb/2)
 }
 
 func (d *PhysicalDrive) Info() Info {
@@ -179,7 +197,7 @@ func (d *PhysicalDrive) sgRead(ctx context.Context, lba, n int64) ([]byte, error
 	}
 	var out bytes.Buffer
 	_, err := d.tools.Run(ctx, tools.Cmd{Name: "sg_dd", Args: []string{
-		"if=" + d.sg, "of=-", "bs=2048", "bpt=" + strconv.FormatInt(min(n, 64), 10),
+		"if=" + d.sg, "of=-", "bs=2048", "bpt=" + strconv.FormatInt(min(n, d.bpt), 10),
 		"skip=" + strconv.FormatInt(lba, 10), "count=" + strconv.FormatInt(n, 10),
 	}, Stdout: &out})
 	if err != nil {
