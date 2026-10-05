@@ -4,6 +4,7 @@
 #   finalized.img       DVD-Video: a 4:3 and a 16:9 title, 2 chapters each
 #   unfinalized-a.img   raw packs, no file system, 3 recordings (side A)
 #   unfinalized-b.img   raw packs, 2 recordings (side B of the same disc)
+#   unfinalized-tracks.img  a camcorder track table with unwritten gaps
 #   damaged.img         unfinalized-a with unreadable sectors mid-recording
 #   data.img            ISO9660 with documents, no video
 #   blank.img           blank DVD-R
@@ -76,6 +77,30 @@ raw() { # out clips...
 }
 raw unfinalized-a.img rec1 rec2 rec3
 raw unfinalized-b.img recB1 recB2
+
+# A camcorder's real track layout (scaled down): a reserved, unwritten
+# file-system track, a small management track, an unwritten gap longer than
+# the 4096-sector "unwritten tail" limit, another small track, then the video.
+# The unwritten areas are listed as unreadable, as a drive reports them.
+{
+  head -c $((2048 * 6080)) /dev/urandom >tracks.tmp
+  dd if=/dev/zero of=tracks.tmp bs=2048 count=528 conv=notrunc status=none
+  dd if=/dev/zero of=tracks.tmp bs=2048 seek=600 count=5400 conv=notrunc status=none
+  dd if=/dev/zero of=tracks.tmp bs=2048 seek=6064 count=16 conv=notrunc status=none
+  cat clips/rec1.mpg clips/rec2.mpg clips/rec3.mpg >>tracks.tmp
+  last=$(( $(stat -c %s tracks.tmp) / 2048 ))
+  head -c $((2048 * 16)) /dev/zero >>tracks.tmp
+  mv tracks.tmp unfinalized-tracks.img
+  cat >unfinalized-tracks.img.media.json <<JSON
+{"type":"DVD-R Sequential","disc_status":"appendable","session_state":"incomplete","next_writable":$((last + 16)),
+ "tracks":[
+  {"state":"reserved incremental","start":0,"size":512},
+  {"state":"partial incremental","start":528,"size":5400,"next_writable":616,"last_recorded":599},
+  {"state":"complete incremental","start":6000,"size":64,"last_recorded":6063},
+  {"state":"incomplete incremental","start":6080,"size":700000,"next_writable":$((last + 16)),"last_recorded":$((last - 1))}]}
+JSON
+  echo "[{\"start\":0,\"end\":528},{\"start\":600,\"end\":6000},{\"start\":6064,\"end\":6080},{\"start\":$last,\"end\":$((last + 16))}]" >unfinalized-tracks.img.bad.json
+}
 
 # Damaged: 40 unreadable sectors inside the first recording.
 cp unfinalized-a.img damaged.img

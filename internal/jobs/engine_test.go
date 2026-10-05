@@ -428,3 +428,25 @@ func TestDiscRemovedMidReadResumes(t *testing.T) {
 		t.Errorf("image stages %d, want 2 (interrupted + resumed)", stages)
 	}
 }
+
+// The track layout of a real unfinalized camcorder DVD-R: only the written
+// tracks are read, so the gap before the video doesn't end imaging early,
+// and nothing unwritten counts as damage.
+func TestCamcorderTrackLayout(t *testing.T) {
+	h := newHarness(t)
+	set := h.e.Settings()
+	set.Batch, set.BatchSides, set.BatchDesc = true, 1, "Mauritius 2"
+	h.e.SaveSettings(set)
+	h.im.Insert("unfinalized-tracks.img")
+	h.waitFor("job", func() bool { return h.only() != nil })
+	id := h.only().ID
+	h.waitFor("done", func() bool { return h.state(id) == store.Done })
+	d, _ := h.e.St.Disc(id)
+	a := d.Side("A")
+	if a.StoppedAt != 0 || a.Bad.Total() != 0 {
+		t.Errorf("stopped at %d, bad %+v", a.StoppedAt, a.Bad)
+	}
+	if got := h.files("Mauritius 2"); len(got) != 3 {
+		t.Errorf("files %v", got)
+	}
+}

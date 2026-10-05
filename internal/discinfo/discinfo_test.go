@@ -117,3 +117,79 @@ func TestPreClassifyMethod(t *testing.T) {
 		t.Errorf("ram: %v %v", m, ok)
 	}
 }
+
+// A camcorder's unfinalized 8 cm DVD-R (Hitachi, Sony DRX-S90U): four tracks
+// with unwritten gaps, the video in the last one.
+const camcorderTracks = `INQUIRY:                [SONY    ][DVD RW DRX-S90U ][1.D0]
+GET [CURRENT] CONFIGURATION:
+ Mounted Media:         11h, DVD-R Sequential
+READ DVD STRUCTURE[#0h]:
+ Media Book Type:       25h, DVD-R book [revision 5]
+ Legacy lead-out at:    714352*2KB=1462992896
+ Last border-out at:    2045*2KB=4188160
+READ DISC INFORMATION:
+ Disc status:           appendable
+ Number of Sessions:    1
+ State of Last Session: incomplete
+ "Next" Track:          1
+ Number of Tracks:      4
+READ TRACK INFORMATION[#1]:
+ Track State:           reserved incremental
+ Track Start Address:   0*2KB
+ Next Writable Address: 0*2KB
+ Free Blocks:           512*2KB
+ Track Size:            512*2KB
+READ TRACK INFORMATION[#2]:
+ Track State:           partial incremental
+ Track Start Address:   528*2KB
+ Next Writable Address: 1168*2KB
+ Free Blocks:           33152*2KB
+ Track Size:            33792*2KB
+ Last Recorded Address: 1151*2KB
+READ TRACK INFORMATION[#3]:
+ Track State:           complete incremental
+ Track Start Address:   34336*2KB
+ Free Blocks:           0*2KB
+ Track Size:            464*2KB
+ Last Recorded Address: 34799*2KB
+READ TRACK INFORMATION[#4]:
+ Track State:           incomplete incremental
+ Track Start Address:   34816*2KB
+ Next Writable Address: 468592*2KB
+ Free Blocks:           245152*2KB
+ Track Size:            678928*2KB
+ Last Recorded Address: 468575*2KB
+READ CAPACITY:          0*2048=0
+`
+
+func TestCamcorderTrackTable(t *testing.T) {
+	m := ParseMediaInfo(camcorderTracks)
+	if len(m.Tracks) != 4 || m.Tracks[0].State != "reserved incremental" || m.Tracks[3].LastRecorded != 468575 {
+		t.Fatalf("tracks %+v", m.Tracks)
+	}
+	want := []Extent{{528, 1152}, {34336, 34800}, {34816, 468576}}
+	got := m.Extents()
+	if len(got) != len(want) {
+		t.Fatalf("extents %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("extent %d: %+v want %+v", i, got[i], want[i])
+		}
+	}
+	if !m.Open() || m.UsedSectors() != 468592 {
+		t.Errorf("open %v used %d", m.Open(), m.UsedSectors())
+	}
+	if _, method, ok := PreClassify(Probe{Media: m}); !ok || method != ImageRaw {
+		t.Errorf("preclassify %v %v", method, ok)
+	}
+}
+
+func TestExtentsFallBackWithoutTrackTable(t *testing.T) {
+	m := ParseMediaInfo(unfinalized)
+	got := m.Extents()
+	// The older fixture has two tracks: an unwritten reserved one and the data.
+	if len(got) != 1 || got[0] != (Extent{8432, 125360}) {
+		t.Fatalf("extents %+v", got)
+	}
+}

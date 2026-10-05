@@ -92,7 +92,7 @@ func TestCopyLoopZeroFillsBadSectors(t *testing.T) {
 	out, mp := filepath.Join(dir, "a.img"), filepath.Join(dir, "a.map")
 	bad := Ranges{{700, 703}, {1500, 1501}}
 	var last Progress
-	res, err := copyLoop(context.Background(), reader(src, bad), 2000, out, mp, 0, func(p Progress) { last = p })
+	res, err := copyLoop(context.Background(), reader(src, bad), 2000, nil, out, mp, 0, func(p Progress) { last = p })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestCopyLoopZeroFillsBadSectors(t *testing.T) {
 func TestCopyLoopStopsAtUnwrittenTail(t *testing.T) {
 	_, src := makeImage(t, 10000)
 	dir := t.TempDir()
-	res, err := copyLoop(context.Background(), reader(src, Ranges{{100, 101}, {5000, 10000}}), 10000,
+	res, err := copyLoop(context.Background(), reader(src, Ranges{{100, 101}, {5000, 10000}}), 10000, nil,
 		filepath.Join(dir, "a.img"), filepath.Join(dir, "a.map"), 4096, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +143,7 @@ func TestCopyLoopResumes(t *testing.T) {
 		}
 		return reader(src, nil)(c, lba, n)
 	}
-	if _, err := copyLoop(ctx, read, 3000, out, mp, 0, nil); !errors.Is(err, context.Canceled) {
+	if _, err := copyLoop(ctx, read, 3000, nil, out, mp, 0, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("want cancel, got %v", err)
 	}
 	var firstLBA int64 = -1
@@ -153,7 +153,7 @@ func TestCopyLoopResumes(t *testing.T) {
 		}
 		return reader(src, nil)(c, lba, n)
 	}
-	if _, err := copyLoop(context.Background(), read2, 3000, out, mp, 0, nil); err != nil {
+	if _, err := copyLoop(context.Background(), read2, 3000, nil, out, mp, 0, nil); err != nil {
 		t.Fatal(err)
 	}
 	if firstLBA < 1024 {
@@ -176,5 +176,33 @@ func TestParseLsscsi(t *testing.T) {
 	}
 	if ds[0].Model != "HL-DT-ST DVDRAM GUC0N" {
 		t.Errorf("model %q", ds[0].Model)
+	}
+}
+
+// Unwritten gaps between camcorder tracks must be skipped, not read until
+// the "unwritten tail" heuristic gives up before the video.
+func TestCopyLoopSkipsGapsBetweenExtents(t *testing.T) {
+	_, src := makeImage(t, 12000)
+	dir := t.TempDir()
+	unwritten := Ranges{{0, 528}, {600, 6000}, {6064, 6080}, {11000, 12000}}
+	var reads int
+	read := func(c context.Context, lba, n int64) ([]byte, error) {
+		reads++
+		return reader(src, unwritten)(c, lba, n)
+	}
+	exts := []Range{{528, 600}, {6000, 6064}, {6080, 11000}}
+	res, err := copyLoop(context.Background(), read, 12000, exts, filepath.Join(dir, "a.img"), filepath.Join(dir, "a.map"), 4096, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StoppedAt != 0 || res.Bad.Total() != 0 {
+		t.Fatalf("stopped at %d, bad %+v", res.StoppedAt, res.Bad)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, "a.img"))
+	if !bytes.Equal(got[6080*SectorSize:11000*SectorSize], src[6080*SectorSize:11000*SectorSize]) {
+		t.Error("video track not copied")
+	}
+	if reads > 40 {
+		t.Errorf("%d reads; gaps should not be read at all", reads)
 	}
 }

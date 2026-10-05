@@ -14,6 +14,9 @@ the rest. Each "Needs a real disc" row has a command; record what it prints.
 | Does Photos-relevant tagging work on the bundled stack? | ExifTool 12.40 writes `Keys:CreationDate` with offset and UTC QuickTime dates into the MP4 without re-encoding. | `TestFinalizedEndToEnd`, `TestDoubleSidedUnfinalizedDisc` |
 | Test drive on the HTPC | HL-DT-ST DVDRAM GUC0N (SATA, tray, lists DVD-RAM read); `/dev/sr0` ↔ `/dev/sg1`, both group `cdrom`. Not the Sony DRX-S90U in the spec. | `camdvd doctor` |
 
+| Real unfinalized camcorder DVD-R layout (2026-10-05, Sony DRX-S90U, 8 cm DVD-R) | Four tracks: reserved 0–511 (unwritten), management 528–1151, complete 34336–34799, video from 34816 to the last recorded address; a 33,184-sector unwritten gap before the video. `sg_dd` reads fail on unwritten sectors. Raw imaging now follows the track table. | `TestCamcorderTrackTable`, `TestCamcorderTrackLayout` |
+| Does a blank-reporting DVD-RW keep old recordings readable? | Not through the drive: every READ fails once the disc reports blank. | Probe of a quick-blanked 8 cm DVD-RW |
+
 ## Needs a real disc
 
 Run on the server with the disc in the drive (stop the service first so it
