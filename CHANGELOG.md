@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.5 — 2026-10-05
+
+- **Fix:** "Process again" kept the first run's "file system couldn't be
+  read" verdict, so a DVD-RAM reprocessed after v0.1.4 was still carved raw.
+
 ## v0.1.4 — 2026-10-05
 
 - **DVD-RAM:** Panasonic camcorder DVD-RAM discs (UDF 2.00) couldn't be

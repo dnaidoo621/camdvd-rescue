@@ -101,11 +101,11 @@ func (e *Engine) extractSide(ctx context.Context, d *store.Disc, letter string) 
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	// Every field is set from this listing: a reprocessed side must not keep
+	// an earlier run's verdict.
 	probe.Listed = true
 	probe.HasVideoTS, probe.HasRTAV = listing.HasVideoTS, listing.HasRTAV
-	if lerr != nil && probe.FSType != "" {
-		probe.ListFailed = true
-	}
+	probe.ListFailed = lerr != nil && probe.FSType != ""
 	if lerr == nil && probe.FSType == "" {
 		// blkid missed it (or ran on an open session); 7-Zip found files.
 		probe.FSType = "udf"
