@@ -256,7 +256,13 @@ func (e *Engine) afterImaged(ctx context.Context, dc *driveCtl, id, letter strin
 				break
 			}
 			if d.State != store.AwaitingAnswer {
-				_, _ = e.update(id, func(d *store.Disc) error { d.State = store.AwaitingAnswer; return nil })
+				_, _ = e.update(id, func(d *store.Disc) error {
+					if d.State.Terminal() { // cancelled meanwhile: leave it
+						return errStop
+					}
+					d.State = store.AwaitingAnswer
+					return nil
+				})
 			}
 			select {
 			case <-ctx.Done():
@@ -266,10 +272,15 @@ func (e *Engine) afterImaged(ctx context.Context, dc *driveCtl, id, letter strin
 		}
 		d, _ := e.St.Disc(id)
 		if d.SidesWanted == 2 && d.Side("B") == nil {
-			_, _ = e.update(id, func(d *store.Disc) error {
+			if _, err := e.update(id, func(d *store.Disc) error {
+				if d.State.Terminal() {
+					return errStop
+				}
 				d.State, d.Message = store.AwaitingFlip, "Flip the disc and insert side B"
 				return nil
-			})
+			}); err != nil {
+				return
+			}
 			_ = e.eject(dc)
 			return
 		}
