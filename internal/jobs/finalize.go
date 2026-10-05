@@ -218,16 +218,25 @@ func (e *Engine) finalize(ctx context.Context, id string) error {
 		}
 	}
 
-	d, err = e.update(id, func(x *store.Disc) error {
+	// The manifest is written before the disc shows as done, so "done"
+	// always means every file, tag and the manifest are in place.
+	if _, err := e.update(id, func(x *store.Disc) error {
 		x.Folder, x.Combined = d.Folder, d.Combined
 		x.Warnings = dedupe(append(x.Warnings, warnings...))
-		x.State, x.Message, x.DoneAt = store.Done, "", time.Now()
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
-	return e.writeManifest(id)
+	if err := e.writeManifest(id); err != nil {
+		return err
+	}
+	if _, err := e.update(id, func(x *store.Disc) error {
+		x.State, x.Message, x.DoneAt = store.Done, "", time.Now()
+		return nil
+	}); err != nil {
+		return err
+	}
+	return e.writeManifest(id) // again, recording the final state
 }
 
 // tagAndHash writes Photos tags, sets the file time and records the hash.

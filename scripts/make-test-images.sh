@@ -8,6 +8,7 @@
 #   damaged.img         unfinalized-a with unreadable sectors mid-recording
 #   data.img            ISO9660 with documents, no video
 #   blank.img           blank DVD-R
+#   dvdram.img          UDF 2.01 DVD-RAM layout (only with mkudffs + sudo)
 #
 # Each image has a .media.json sidecar standing in for dvd+rw-mediainfo, and
 # damaged.img a .bad.json listing the sectors the image drive fails to read.
@@ -114,6 +115,22 @@ cp unfinalized-a.img damaged.img
 cp unfinalized-a.img.media.json damaged.img.media.json
 dd if=/dev/zero of=damaged.img bs=2048 seek=8500 count=40 conv=notrunc status=none
 echo '[{"start":8500,"end":8540}]' >damaged.img.bad.json
+
+# DVD-RAM style UDF image (needs mkudffs and passwordless sudo to loop-mount;
+# skipped otherwise). The files stand in for DVD-VR: the UDF reader test
+# checks they extract byte for byte.
+if command -v mkudffs >/dev/null && sudo -n true 2>/dev/null; then
+  mkdir -p dvdram-src/DVD_RTAV
+  head -c 131072 /dev/urandom >dvdram-src/DVD_RTAV/VR_MANGR.IFO
+  cat clips/rec1.mpg clips/rec2.mpg >dvdram-src/DVD_RTAV/VR_MOVIE.VRO
+  rm -f dvdram.img && truncate -s 64M dvdram.img
+  mkudffs --media-type=dvdram --udfrev=0x0201 --label=CAMDVD_RAM dvdram.img >/dev/null
+  mnt=$(mktemp -d)
+  sudo mount -o loop -t udf dvdram.img "$mnt"
+  sudo cp -r dvdram-src/DVD_RTAV "$mnt/"
+  sudo umount "$mnt" && rmdir "$mnt"
+  sidecar dvdram.img "DVD-RAM" other complete 0
+fi
 
 # Data disc.
 mkdir -p data/Documents && echo "tax 2004" >data/Documents/tax.txt

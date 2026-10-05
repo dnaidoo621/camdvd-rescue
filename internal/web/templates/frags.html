@@ -107,6 +107,7 @@
   <footer class="actions">
     {{if eq $d.State "duplicate"}}<button hx-post="/ui/jobs/{{$d.ID}}/import-again" hx-target="#job-{{$d.ID}}" hx-swap="outerHTML">Import again</button>{{end}}
     {{if canResume $d.State}}<button hx-post="/ui/jobs/{{$d.ID}}/resume" hx-target="#job-{{$d.ID}}" hx-swap="outerHTML">Resume</button>{{end}}
+    {{if canReprocess $d}}<button class="secondary" hx-post="/ui/jobs/{{$d.ID}}/reprocess" hx-target="#job-{{$d.ID}}" hx-swap="outerHTML" title="Classify and extract again from the saved image; the disc isn't needed">Process again</button>{{end}}
     {{if canForceRaw $d}}<button class="secondary" hx-post="/ui/jobs/{{$d.ID}}/force-raw" hx-target="#job-{{$d.ID}}" hx-swap="outerHTML" hx-confirm="Ignore the classification and recover this disc raw?">Force raw recovery</button>{{end}}
     {{if and (eq $d.State "done") (eq (len $d.Sides) 1)}}<button class="secondary" hx-post="/ui/jobs/{{$d.ID}}/add-side" hx-target="#job-{{$d.ID}}" hx-swap="outerHTML">Add another side</button>{{end}}
     {{if canCancel $d.State}}<button class="danger" hx-post="/ui/jobs/{{$d.ID}}/cancel" hx-target="#job-{{$d.ID}}" hx-swap="outerHTML" hx-confirm="Cancel this disc? Resume continues where it stopped.">Cancel</button>{{end}}

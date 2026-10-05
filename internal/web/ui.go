@@ -110,6 +110,17 @@ var funcs = template.FuncMap{
 		return "muted"
 	},
 	"canResume": func(s store.State) bool { return s == store.Cancelled || s == store.Failed || s == store.Paused },
+	"canReprocess": func(d *store.Disc) bool {
+		if d.State != store.Cancelled && d.State != store.Failed || len(d.Sides) == 0 {
+			return false
+		}
+		for _, s := range d.Sides {
+			if !s.Imaged {
+				return false
+			}
+		}
+		return true
+	},
 	"canCancel": func(s store.State) bool { return !s.Terminal() },
 	"canForceRaw": func(d *store.Disc) bool {
 		if d.State == store.Done || d.State == store.Cancelled {

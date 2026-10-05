@@ -18,6 +18,7 @@ import (
 	"github.com/dnaidoo621/camdvd-rescue/internal/drive"
 	"github.com/dnaidoo621/camdvd-rescue/internal/dvdifo"
 	"github.com/dnaidoo621/camdvd-rescue/internal/tools"
+	"github.com/dnaidoo621/camdvd-rescue/internal/udf"
 )
 
 // Source is one recording to convert. Kind says how FFmpeg reads it.
@@ -65,11 +66,16 @@ type Listing struct {
 }
 
 // ListImage lists an image's ISO9660/UDF file system with 7-Zip, without
-// mounting it.
+// mounting it, falling back to the built-in UDF reader for file systems
+// 7-Zip can't open (Panasonic DVD-RAM UDF 2.00).
 func ListImage(ctx context.Context, ts tools.Set, img string) (Listing, error) {
 	r, err := ts.Run(ctx, tools.Cmd{Name: ts.SevenZip(), Args: []string{"l", "-slt", "-ba", img}})
 	l := Listing{Output: tail(r.Stdout+r.Stderr, 4000)}
 	if err != nil {
+		if ul, uerr := listUDF(img); uerr == nil {
+			ul.Output = l.Output + "\n7-Zip failed; listed with the built-in UDF reader:\n" + ul.Output
+			return ul, nil
+		}
 		return l, err
 	}
 	for _, line := range strings.Split(r.Stdout, "\n") {
@@ -87,12 +93,63 @@ func ListImage(ctx context.Context, ts tools.Set, img string) (Listing, error) {
 	return l, nil
 }
 
-// ExtractImage pulls the whole file system out of img into dst.
+// ExtractImage pulls the whole file system out of img into dst with 7-Zip,
+// or with the built-in UDF reader when 7-Zip can't (it lists Panasonic
+// DVD-RAM discs but fails on their VR_MOVIE.VRO with "Unsupported Method").
 func ExtractImage(ctx context.Context, ts tools.Set, img, dst string) (tools.Result, error) {
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return tools.Result{}, err
 	}
-	return ts.Run(ctx, tools.Cmd{Name: ts.SevenZip(), Args: []string{"x", "-y", "-bd", "-o" + dst, img}})
+	r, err := ts.Run(ctx, tools.Cmd{Name: ts.SevenZip(), Args: []string{"x", "-y", "-bd", "-o" + dst, img}})
+	if err == nil || ctx.Err() != nil {
+		return r, err
+	}
+	_ = os.RemoveAll(dst)
+	if uerr := extractUDF(img, dst); uerr != nil {
+		return r, fmt.Errorf("%w; built-in UDF reader: %v", err, uerr)
+	}
+	r.CmdLine += "\n(7-Zip failed; extracted with the built-in UDF reader)"
+	return r, nil
+}
+
+func listUDF(img string) (Listing, error) {
+	f, err := os.Open(img)
+	if err != nil {
+		return Listing{}, err
+	}
+	defer f.Close()
+	fs, err := udf.Open(f)
+	if err != nil {
+		return Listing{}, err
+	}
+	var l Listing
+	var b strings.Builder
+	err = fs.Walk(func(e *udf.Entry) error {
+		l.Paths = append(l.Paths, e.Path)
+		top := strings.ToUpper(strings.SplitN(e.Path, "/", 2)[0])
+		l.HasVideoTS = l.HasVideoTS || top == "VIDEO_TS"
+		l.HasRTAV = l.HasRTAV || top == "DVD_RTAV"
+		fmt.Fprintf(&b, "%s %12d %s\n", e.ModTime.Format("2006-01-02 15:04:05"), e.Size, e.Path)
+		return nil
+	})
+	l.Output = tail(b.String(), 4000)
+	if err == nil && len(l.Paths) == 0 {
+		err = fmt.Errorf("UDF file system is empty")
+	}
+	return l, err
+}
+
+func extractUDF(img, dst string) error {
+	f, err := os.Open(img)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	fs, err := udf.Open(f)
+	if err != nil {
+		return err
+	}
+	return fs.Extract(dst)
 }
 
 // findDir finds a top-level directory case-insensitively.

@@ -457,3 +457,26 @@ func TestCamcorderTrackLayout(t *testing.T) {
 		}
 	}
 }
+
+func TestReprocessFromSavedImage(t *testing.T) {
+	h := newHarness(t)
+	set := h.e.Settings()
+	set.Batch, set.BatchSides, set.BatchDesc = true, 1, "Again"
+	h.e.SaveSettings(set)
+	h.im.Insert("unfinalized-a.img")
+	h.waitFor("job", func() bool { return h.only() != nil })
+	id := h.only().ID
+	h.waitFor("processing", func() bool { return h.state(id) == store.Processing })
+	if err := h.e.Reprocess(id); err == nil {
+		t.Fatal("reprocess allowed while running")
+	}
+	h.e.Cancel(id)
+	h.waitFor("stopped", func() bool { return !h.e.Running(id) })
+	if err := h.e.Reprocess(id); err != nil {
+		t.Fatal(err)
+	}
+	h.waitFor("done", func() bool { return h.state(id) == store.Done })
+	if got := h.files("Again"); len(got) != 3 {
+		t.Errorf("files %v", got)
+	}
+}
