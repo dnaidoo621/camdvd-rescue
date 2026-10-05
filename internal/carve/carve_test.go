@@ -143,3 +143,62 @@ func TestBadSectorsDoNotBridgeAClockJump(t *testing.T) {
 		t.Fatalf("got %+v", clips)
 	}
 }
+
+// packTC is a pack carrying a GOP header with the given timecode, as the
+// first pack of each video GOP does.
+func packTC(scr uint64, h, m, s, pic uint32) []byte {
+	b := pack(scr)
+	t := h<<19 | m<<13 | 1<<12 | s<<6 | pic
+	v := t << 7
+	copy(b[40:], []byte{0, 0, 1, 0xB8, byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)})
+	return b
+}
+
+// segment writes n packs starting at clock 0 (as a Hitachi camcorder does
+// every ~21.6 s) with GOP timecodes counting from startSec, one GOP per 12
+// packs.
+func (im *image) segment(n int, startSec float64) {
+	for i := range n {
+		scr := uint64(float64(i) * 0.04 * SCRHz)
+		if i%12 == 0 {
+			sec := startSec + float64(i)*0.04
+			whole := uint32(sec)
+			im.Write(packTC(scr, 0, whole/60, whole%60, uint32((sec-float64(whole))*25)))
+		} else {
+			im.Write(pack(scr))
+		}
+	}
+}
+
+func TestTimecodeBridgesClockResets(t *testing.T) {
+	var im image
+	im.segment(540, 0)    // recording 1: 0–21.6 s
+	im.segment(540, 21.6) // clock resets, timecode continues: same recording
+	im.segment(200, 43.2) // and again
+	im.segment(300, 0)    // timecode restarts: recording 2
+	clips := scan(t, &im, DefaultOptions())
+	if len(clips) != 2 {
+		t.Fatalf("got %d clips, want 2: %+v", len(clips), clips)
+	}
+	if clips[0].Sectors != 1280 || clips[0].Resets != 2 || clips[1].Sectors != 300 {
+		t.Errorf("clips %+v", clips)
+	}
+	if d := clips[0].Duration(); d < 50 || d > 52 {
+		t.Errorf("recording 1 lasts %.1f s across resets, want ~51", d)
+	}
+}
+
+func TestGOPTimecode(t *testing.T) {
+	b := packTC(0, 1, 2, 3, 4)
+	if got := GOPTimecode(b[14:]); got != ((1*60+2)*60+3)*64+4 {
+		t.Errorf("got %d", got)
+	}
+	if GOPTimecode(make([]byte, 100)) != -1 {
+		t.Error("no GOP should be -1")
+	}
+	bad := packTC(0, 0, 0, 1, 0)
+	bad[40+5] &^= 0x08 // clear the marker bit (bit 19 of the time code word)
+	if GOPTimecode(bad[14:]) != -1 {
+		t.Error("missing marker accepted")
+	}
+}

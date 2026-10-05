@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.3 — 2026-10-05
+
+- **Fix:** unfinalized discs from cameras that restart the stream clock
+  inside a recording (Hitachi, every ~21.6 s) were split into dozens of short
+  clips. The carver now keeps a recording together while its video timecode
+  carries on, and splits where the timecode restarts. Durations of such
+  clips come from the disc, not ffprobe's first-segment estimate.
+- **Fix:** typing a description while a disc was being read was lost on
+  every progress update.
+- **Fix:** after a restart, a job waiting for its answer or a flip didn't
+  continue converting the side already read.
+
 ## v0.1.2 — 2026-10-05
 
 - **Fix:** raw reads on USB drives failed outright: `sg_dd` asked for 64

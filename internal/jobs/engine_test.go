@@ -449,4 +449,11 @@ func TestCamcorderTrackLayout(t *testing.T) {
 	if got := h.files("Mauritius 2"); len(got) != 3 {
 		t.Errorf("files %v", got)
 	}
+	// The middle recording spans a clock reset: one clip of both parts.
+	clips, _ := h.e.St.Clips(id)
+	if len(clips) == 3 {
+		if d := clips[1].Info.Duration; d < 7.5 || d > 9.5 { // clock span includes each segment's lead-in
+			t.Errorf("long recording lasts %.1f s, want ~8", d)
+		}
+	}
 }

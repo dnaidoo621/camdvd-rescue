@@ -63,6 +63,7 @@ func Probe(ctx context.Context, ts tools.Set, s Source) (Info, error) {
 	}
 	var in Info
 	in.Duration, _ = strconv.ParseFloat(p.Format.Duration, 64)
+
 	for _, st := range p.Streams {
 		switch st.CodecType {
 		case "video":
@@ -79,6 +80,9 @@ func Probe(ctx context.Context, ts tools.Set, s Source) (Info, error) {
 				in.HasAudio, in.AudioCodec = true, st.CodecName
 			}
 		}
+	}
+	if s.Duration > in.Duration+1 {
+		in.Duration = s.Duration
 	}
 	return in, nil
 }
