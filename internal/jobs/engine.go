@@ -42,8 +42,11 @@ type Engine struct {
 	ctx     context.Context
 	cancels map[string]map[int]context.CancelFunc // disc id -> running work
 	nextTok int
-	blocked string // doctor failure that blocks disc processing
-	gid     int    // shared group id, -1 if none
+	blocked string                // doctor failure that blocks disc processing
+	live    map[int64]*liveEncode // conversions running now
+	speeds  []float64             // recent encode speeds, video s per wall s
+	imaged  map[string]time.Time  // last imaging progress per disc
+	gid     int                   // shared group id, -1 if none
 	wg      sync.WaitGroup
 }
 

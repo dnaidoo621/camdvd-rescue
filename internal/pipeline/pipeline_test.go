@@ -68,7 +68,7 @@ func TestConvertArgs(t *testing.T) {
 	in := Info{FieldOrder: "tt", Duration: 10}
 	a := ConvertArgs(s, in, EncodeOptions{Preset: PresetStandard}, "/o.mp4")
 	j := strings.Join(a, " ")
-	for _, want := range []string{"-f dvdvideo", "-chapter_start 2 -chapter_end 2", "bwdif=mode=send_field", "-crf 18", "-preset slow",
+	for _, want := range []string{"-f dvdvideo", "-chapter_start 2 -chapter_end 2", "bwdif=mode=send_field", "-crf 18", "-preset medium",
 		"-profile:v high", "-level:v 4.1", "-c:a aac -b:a 192k", "+faststart", "/o.mp4"} {
 		if !strings.Contains(j, want) {
 			t.Errorf("missing %q in %s", want, j)

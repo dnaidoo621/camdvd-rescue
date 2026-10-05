@@ -36,6 +36,59 @@ var funcs = template.FuncMap{
 	},
 	"pct":  func(f float64) string { return fmt.Sprintf("%.0f%%", math.Max(0, math.Min(1, f))*100) },
 	"pct1": func(f float64) string { return fmt.Sprintf("%.1f%%", f*100) },
+	"mins": func(m float64) string {
+		switch {
+		case m <= 0:
+			return "–"
+		case m < 1:
+			return "under a minute"
+		case m < 90:
+			return fmt.Sprintf("%.0f min", m)
+		}
+		return fmt.Sprintf("%.1f h", m/60)
+	},
+	"until": func(t time.Time) string {
+		if t.IsZero() {
+			return ""
+		}
+		d := time.Until(t).Round(time.Minute)
+		at := t.Format("15:04")
+		if t.YearDay() != time.Now().YearDay() {
+			at = t.Format("Mon 15:04")
+		}
+		if d < time.Minute {
+			return "under a minute"
+		}
+		if d < time.Hour {
+			return fmt.Sprintf("about %d min (around %s)", int(d.Minutes()), at)
+		}
+		return fmt.Sprintf("about %dh %02dm (around %s)", int(d.Hours()), int(d.Minutes())%60, at)
+	},
+	"fracOf": func(a, b int) float64 {
+		if b == 0 {
+			return 0
+		}
+		return float64(a) / float64(b)
+	},
+	"compact": func(clips []*store.Clip) bool { return len(clips) > 8 },
+	"busyClips": func(clips []*store.Clip) []*store.Clip {
+		var out []*store.Clip
+		for _, c := range clips {
+			if c.State == "converting" || c.State == "failed" {
+				out = append(out, c)
+			}
+		}
+		return out
+	},
+	"countDone": func(clips []*store.Clip) int {
+		n := 0
+		for _, c := range clips {
+			if c.Done() {
+				n++
+			}
+		}
+		return n
+	},
 	"size": func(n int64) string {
 		switch {
 		case n >= 1e9:
@@ -290,11 +343,15 @@ func (s *Server) pageDashboard(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	s.render(w, r, "dashboard", map[string]any{"Drives": s.E.Drives(), "Cards": cards})
+	s.render(w, r, "dashboard", map[string]any{"Drives": s.E.Drives(), "Cards": cards, "Overview": s.E.Overview()})
 }
 
 func (s *Server) fragDrives(w http.ResponseWriter, r *http.Request) {
 	s.frag(w, "drives", map[string]any{"Drives": s.E.Drives(), "Blocked": s.E.Blocked()})
+}
+
+func (s *Server) fragOverview(w http.ResponseWriter, r *http.Request) {
+	s.frag(w, "overview", s.E.Overview())
 }
 
 func (s *Server) fragActive(w http.ResponseWriter, r *http.Request) {
@@ -561,6 +618,7 @@ func (s *Server) pageSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	set := s.E.Settings()
 	set.Preset = pick(r.FormValue("preset"), set.Preset, "archive", "standard", "small", "copy")
+	set.Speed = pick(r.FormValue("speed"), set.Speed, "best", "balanced", "fast")
 	set.Split = pick(r.FormValue("split"), set.Split, "chapter", "title")
 	set.HWAccel = pick(r.FormValue("hwaccel"), set.HWAccel, "", "vaapi", "nvenc")
 	if tz := strings.TrimSpace(r.FormValue("timezone")); tz != "" {

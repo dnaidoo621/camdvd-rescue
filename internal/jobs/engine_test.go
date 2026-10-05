@@ -485,3 +485,34 @@ func TestReprocessFromSavedImage(t *testing.T) {
 		t.Errorf("stale verdict kept: %+v", d.Side("A").Decision)
 	}
 }
+
+func TestOverview(t *testing.T) {
+	h := newHarness(t)
+	set := h.e.Settings()
+	set.Batch, set.BatchSides, set.BatchDesc = true, 1, "Overview"
+	h.e.SaveSettings(set)
+	h.im.Insert("unfinalized-a.img")
+	h.waitFor("job", func() bool { return h.only() != nil })
+	id := h.only().ID
+	h.waitFor("clips queued", func() bool {
+		o := h.e.Overview()
+		return len(o.Discs) == 1 && o.ClipsLeft > 0 && o.MinutesLeft > 0
+	})
+	if o := h.e.Overview(); o.ETA.IsZero() || o.Settings != "small quality, balanced speed" {
+		t.Errorf("overview %+v", o)
+	}
+	h.waitFor("done", func() bool { return h.state(id) == store.Done })
+	o := h.e.Overview()
+	if len(o.Discs) != 0 || o.ClipsLeft != 0 || o.DoneToday != 1 || !o.Measured || o.Speed <= 0 {
+		t.Errorf("after done: %+v", o)
+	}
+
+	// A disc left "processing" with clips to go but no work running is stuck.
+	h.e.update(id, func(d *store.Disc) error { d.State = store.Processing; return nil })
+	clips, _ := h.e.St.Clips(id)
+	clips[0].State = "pending"
+	h.e.St.SaveClip(clips[0])
+	if o := h.e.Overview(); len(o.Stuck) != 1 || !strings.Contains(o.Stuck[0], "Press Resume") {
+		t.Errorf("stuck %v", o.Stuck)
+	}
+}

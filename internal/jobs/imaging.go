@@ -188,7 +188,13 @@ func (e *Engine) imageSide(dc *driveCtl, id, letter string) {
 			req.Extents = append(req.Extents, drive.Range{Start: x.Start, End: x.End})
 		}
 	}
+	e.imageMoved(id)
+	var lastDone int64
 	res, err := dc.d.Image(ctx, req, func(p drive.Progress) {
+		if p.Done != lastDone {
+			lastDone = p.Done
+			e.imageMoved(id)
+		}
 		if p.Total == 0 || !e.Hub.Throttled("img-"+id, "", 750*time.Millisecond) {
 			return
 		}
