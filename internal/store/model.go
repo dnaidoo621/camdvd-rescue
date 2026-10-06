@@ -126,10 +126,19 @@ type Disc struct {
 	DiscDate string `json:"disc_date,omitempty"` // yyyy-mm-dd or yyyy-mm-ddThh:mm
 	Location string `json:"location,omitempty"`  // ISO 6709
 
-	Imported bool   `json:"imported,omitempty"` // ticked off as imported into Photos
-	Cleaned  bool   `json:"cleaned,omitempty"`  // image and sources removed
-	Combined string `json:"combined,omitempty"`
+	Imported bool `json:"imported,omitempty"` // ticked off as imported into Photos
+	// Tag rewrites after an edit run in the background: RetagGen counts
+	// edits, RetagDoneGen the last one fully written into the files.
+	RetagGen     int    `json:"retag_gen,omitempty"`
+	RetagDoneGen int    `json:"retag_done_gen,omitempty"`
+	RetagDone    int    `json:"retag_done,omitempty"` // progress of the current rewrite
+	RetagTotal   int    `json:"retag_total,omitempty"`
+	Cleaned      bool   `json:"cleaned,omitempty"` // image and sources removed
+	Combined     string `json:"combined,omitempty"`
 }
+
+// Retagging reports whether an edit's tags are still being written.
+func (d *Disc) Retagging() bool { return d.RetagGen != d.RetagDoneGen }
 
 // Side returns the side with the letter, or nil.
 func (d *Disc) Side(letter string) *Side {
@@ -159,6 +168,9 @@ type Clip struct {
 	SHA256   string            `json:"sha256,omitempty"`
 	Size     int64             `json:"size,omitempty"`
 	Date     pipeline.ClipDate `json:"date"`
+	// Tagged is a signature of the tags last written into the file, so an
+	// interrupted rewrite resumes where it stopped.
+	Tagged string `json:"tagged,omitempty"`
 }
 
 // Done reports whether conversion finished.

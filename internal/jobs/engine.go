@@ -38,16 +38,18 @@ type Engine struct {
 	drives  []*driveCtl
 	convSem chan struct{}
 
-	mu      sync.Mutex
-	ctx     context.Context
-	cancels map[string]map[int]context.CancelFunc // disc id -> running work
-	nextTok int
-	blocked string                // doctor failure that blocks disc processing
-	live    map[int64]*liveEncode // conversions running now
-	speeds  []float64             // recent encode speeds, video s per wall s
-	imaged  map[string]time.Time  // last imaging progress per disc
-	gid     int                   // shared group id, -1 if none
-	wg      sync.WaitGroup
+	mu          sync.Mutex
+	ctx         context.Context
+	cancels     map[string]map[int]context.CancelFunc // disc id -> running work
+	nextTok     int
+	blocked     string                // doctor failure that blocks disc processing
+	live        map[int64]*liveEncode // conversions running now
+	retagCh     chan string           // discs whose tags need rewriting
+	retagQueued map[string]bool
+	speeds      []float64            // recent encode speeds, video s per wall s
+	imaged      map[string]time.Time // last imaging progress per disc
+	gid         int                  // shared group id, -1 if none
+	wg          sync.WaitGroup
 }
 
 type driveCtl struct {
@@ -76,7 +78,8 @@ type DriveState struct {
 // New builds an engine over the given drives.
 func New(cfg config.Config, st *store.Store, ts tools.Set, hub *events.Hub, log *slog.Logger, drives []drive.Drive) *Engine {
 	e := &Engine{Cfg: cfg, St: st, Tools: ts, Hub: hub, Log: log,
-		convSem: make(chan struct{}, cfg.ConvertWorkers), cancels: map[string]map[int]context.CancelFunc{}, gid: -1}
+		convSem: make(chan struct{}, cfg.ConvertWorkers), cancels: map[string]map[int]context.CancelFunc{}, gid: -1,
+		retagCh: make(chan string, 256)}
 	for _, d := range drives {
 		e.drives = append(e.drives, &driveCtl{d: d, status: -1})
 	}
@@ -120,6 +123,9 @@ func (e *Engine) Start(ctx context.Context) error {
 	}
 	e.wg.Add(1)
 	go func() { defer e.wg.Done(); e.autoClean(ctx) }()
+	e.wg.Add(1)
+	go func() { defer e.wg.Done(); e.retagWorker(ctx) }()
+	e.healTags()
 	return nil
 }
 
