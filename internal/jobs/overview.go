@@ -74,6 +74,7 @@ func (e *Engine) imageMoved(id string) {
 type Overview struct {
 	Reading     []Brief     `json:"reading"`    // a disc is being read
 	Waiting     []Brief     `json:"waiting"`    // needs the user: answer, flip, paused
+	Tagging     []Brief     `json:"tagging"`    // finished discs whose tags are being rewritten
 	Encoding    []Encoding  `json:"encoding"`   // conversions running now
 	Discs       []DiscQueue `json:"discs"`      // discs with clips still to convert
 	ClipsLeft   int         `json:"clips_left"` // across all discs
@@ -182,6 +183,14 @@ func (e *Engine) Overview() Overview {
 			o.Reading = append(o.Reading, b)
 		case store.AwaitingAnswer, store.AwaitingFlip, store.Duplicate, store.Paused:
 			o.Waiting = append(o.Waiting, Brief{ID: d.ID, Title: title, State: d.State.Label(), Note: d.Message})
+		}
+		if d.State == store.Done && d.Retagging() {
+			frac := 0.0
+			if d.RetagTotal > 0 {
+				frac = float64(d.RetagDone) / float64(d.RetagTotal)
+			}
+			o.Tagging = append(o.Tagging, Brief{ID: d.ID, Title: title, State: "Updating tags",
+				Note: fmt.Sprintf("%d of %d files", d.RetagDone, d.RetagTotal), Frac: frac})
 		}
 		if d.State.Terminal() || d.State == store.Duplicate {
 			continue

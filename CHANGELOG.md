@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.8 — 2026-10-06
+
+- **Fix:** saving a disc's date or details rewrote every file's tags while
+  the page waited; leaving the page cancelled it part-way, so some files
+  kept the old date. Tag rewrites now run in the background on the server,
+  survive restarts, skip files already done, and show progress on the
+  folder page and the overview. On start, any finished disc whose files
+  don't carry the dates they should is rewritten automatically.
+- A file that can't be tagged is noted and skipped instead of stopping the
+  rest.
+
 ## v0.1.7 — 2026-10-05
 
 - **Damaged discs:** raw imaging now works in ddrescue-style passes — copy

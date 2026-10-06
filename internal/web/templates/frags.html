@@ -66,6 +66,7 @@
     </tbody>
   </table>
   {{end}}
+  {{range .Tagging}}<div class="now"><span class="meta">Updating tags</span> <a href="/library/{{.ID}}">{{.Title}}</a> · {{.Note}}<div class="bar small"><span style="width:{{pct .Frac}}"></span></div></div>{{end}}
   {{range .Waiting}}<p class="meta">⏸ <a href="/jobs/{{.ID}}">{{.Title}}</a>: {{.State}}{{with .Note}} — {{.}}{{end}}</p>{{end}}
 </section>
 {{end}}

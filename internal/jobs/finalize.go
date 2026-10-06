@@ -264,7 +264,9 @@ func (e *Engine) tagAndHash(ctx context.Context, d *store.Disc, c *store.Clip) e
 }
 
 // Retag recomputes dates and rewrites tags of a finished disc's files after
-// its date, zone, camera or place changed. No re-encoding.
+// its date, zone, camera, place or description changed. No re-encoding.
+// Files whose tags already match are skipped, so an interrupted run resumes
+// where it stopped; a file that can't be tagged is noted and skipped.
 func (e *Engine) Retag(ctx context.Context, id string) error {
 	d, err := e.St.Disc(id)
 	if err != nil {
@@ -275,13 +277,42 @@ func (e *Engine) Retag(ctx context.Context, id string) error {
 		return err
 	}
 	e.resolveDates(d, clips)
-	var warnings []string
+	var placed []*store.Clip
 	for _, c := range clips {
-		if c.State != "placed" {
-			continue
+		if c.State == "placed" {
+			placed = append(placed, c)
 		}
-		if err := e.tagAndHash(ctx, d, c); err != nil {
+	}
+	progress := func(n int) {
+		_, _ = e.St.UpdateDisc(id, func(x *store.Disc) error { x.RetagDone, x.RetagTotal = n, len(placed); return nil })
+		if e.Hub.Throttled("retag-"+id, "", time.Second) || n == len(placed) {
+			e.Hub.Publish("job-"+id, "")
+			e.Hub.Publish("queue", "")
+		}
+	}
+	progress(0)
+	var warnings []string
+	for i, c := range placed {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		// Reload: a rename may have moved the file since the list was read.
+		fresh, err := e.St.Clip(c.ID)
+		if err != nil {
 			return err
+		}
+		fresh.Date = c.Date
+		c = fresh
+		sig := tagSignature(e.tagsFor(d, c))
+		if c.Tagged != sig {
+			if err := e.tagAndHash(ctx, d, c); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				warnings = append(warnings, fmt.Sprintf("%s%02d: tags not updated: %v", c.Side, c.Num, err))
+			} else {
+				c.Tagged = sig
+			}
 		}
 		if c.Date.Source == "none" {
 			warnings = append(warnings, fmt.Sprintf("%s%02d: no recording date; set a disc date in the library", c.Side, c.Num))
@@ -289,11 +320,12 @@ func (e *Engine) Retag(ctx context.Context, id string) error {
 		if err := e.St.SaveClip(c); err != nil {
 			return err
 		}
+		progress(i + 1)
 	}
 	_, err = e.update(id, func(x *store.Disc) error {
 		var keep []string
 		for _, w := range x.Warnings {
-			if !strings.Contains(w, "no recording date") {
+			if !strings.Contains(w, "no recording date") && !strings.Contains(w, "tags not updated") {
 				keep = append(keep, w)
 			}
 		}
@@ -304,6 +336,101 @@ func (e *Engine) Retag(ctx context.Context, id string) error {
 		return err
 	}
 	return e.writeManifest(id)
+}
+
+func tagSignature(t pipeline.Tags) string {
+	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%+v", t.When.Format(time.RFC3339), t)))
+	return hex.EncodeToString(h[:8])
+}
+
+// requestRetag records an edit and queues its tag rewrite.
+func (e *Engine) requestRetag(id string) {
+	_, _ = e.update(id, func(d *store.Disc) error { d.RetagGen++; return nil })
+	e.queueRetag(id)
+}
+
+func (e *Engine) queueRetag(id string) {
+	e.mu.Lock()
+	if e.retagQueued == nil {
+		e.retagQueued = map[string]bool{}
+	}
+	if e.retagQueued[id] {
+		e.mu.Unlock()
+		return
+	}
+	e.retagQueued[id] = true
+	e.mu.Unlock()
+	select {
+	case e.retagCh <- id:
+	default:
+		go func() { e.retagCh <- id }()
+	}
+}
+
+// retagWorker writes tags for queued discs one at a time, in the
+// background: a browser leaving the page doesn't stop it, and a restart
+// picks unfinished work up again.
+func (e *Engine) retagWorker(ctx context.Context) {
+	for {
+		var id string
+		select {
+		case <-ctx.Done():
+			return
+		case id = <-e.retagCh:
+		}
+		e.mu.Lock()
+		delete(e.retagQueued, id)
+		e.mu.Unlock()
+		d, err := e.St.Disc(id)
+		if err != nil || d.State != store.Done || !d.Retagging() {
+			continue
+		}
+		gen := d.RetagGen
+		wctx, done := e.track(id)
+		err = e.Retag(wctx, id)
+		done()
+		if err != nil {
+			if ctx.Err() == nil && wctx.Err() == nil {
+				e.Log.Error("retag failed", "disc", id, "err", err)
+			}
+			continue
+		}
+		d, _ = e.update(id, func(x *store.Disc) error {
+			if x.RetagDoneGen < gen {
+				x.RetagDoneGen = gen
+			}
+			return nil
+		})
+		if d != nil && d.Retagging() {
+			e.queueRetag(id) // edited again meanwhile
+		}
+	}
+}
+
+// healTags queues a rewrite for any finished disc with an unfinished edit,
+// or whose files don't carry the dates they should (e.g. a rewrite that was
+// interrupted before this was tracked).
+func (e *Engine) healTags() {
+	discs, _ := e.St.Discs(store.Done)
+	for _, d := range discs {
+		if d.Retagging() {
+			e.queueRetag(d.ID)
+			continue
+		}
+		clips, _ := e.St.Clips(d.ID)
+		stored := make([]time.Time, len(clips))
+		for i, c := range clips {
+			stored[i] = c.Date.When
+		}
+		e.resolveDates(d, clips)
+		for i, c := range clips {
+			if c.State == "placed" && !c.Date.When.Equal(stored[i]) {
+				e.Log.Info("tags out of date; rewriting", "disc", d.ID)
+				e.requestRetag(d.ID)
+				break
+			}
+		}
+	}
 }
 
 // Manifest is the disc.json written next to the disc's working files.

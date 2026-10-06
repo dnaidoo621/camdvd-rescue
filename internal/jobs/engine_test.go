@@ -17,6 +17,7 @@ import (
 	"github.com/dnaidoo621/camdvd-rescue/internal/drive"
 	"github.com/dnaidoo621/camdvd-rescue/internal/events"
 	"github.com/dnaidoo621/camdvd-rescue/internal/library"
+	"github.com/dnaidoo621/camdvd-rescue/internal/pipeline"
 	"github.com/dnaidoo621/camdvd-rescue/internal/store"
 	"github.com/dnaidoo621/camdvd-rescue/internal/tools"
 )
@@ -516,4 +517,43 @@ func TestOverview(t *testing.T) {
 	if o := h.e.Overview(); len(o.Stuck) != 1 || !strings.Contains(o.Stuck[0], "Press Resume") {
 		t.Errorf("stuck %v", o.Stuck)
 	}
+}
+
+func TestEditRetagsInBackgroundAndHeals(t *testing.T) {
+	h := newHarness(t)
+	set := h.e.Settings()
+	set.Batch, set.BatchSides, set.BatchDesc = true, 1, "Tags"
+	h.e.SaveSettings(set)
+	h.im.Insert("unfinalized-a.img")
+	h.waitFor("job", func() bool { return h.only() != nil })
+	id := h.only().ID
+	h.waitFor("done", func() bool { return h.state(id) == store.Done })
+
+	date := "2004-12-24T10:00"
+	start := time.Now()
+	if err := h.e.EditDisc(context.Background(), id, DiscEdit{DiscDate: &date}); err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Errorf("save waited %s for the rewrite; it should return at once", time.Since(start))
+	}
+	h.waitFor("tags written", func() bool { d, _ := h.e.St.Disc(id); return !d.Retagging() })
+	clips, _ := h.e.St.Clips(id)
+	for _, c := range clips {
+		if c.Date.Source != "disc-date" || c.Tagged == "" {
+			t.Errorf("clip %d: %+v tagged=%q", c.Num, c.Date, c.Tagged)
+		}
+	}
+
+	// A rewrite interrupted before this was tracked: a clip's stored date
+	// is stale. Healing finds and rewrites it.
+	clips[1].Date = pipeline.ClipDate{Source: "none"}
+	clips[1].Tagged = ""
+	h.e.St.SaveClip(clips[1])
+	h.e.healTags()
+	h.waitFor("healed", func() bool {
+		c, _ := h.e.St.Clip(clips[1].ID)
+		d, _ := h.e.St.Disc(id)
+		return !d.Retagging() && c.Date.Source == "disc-date" && c.Tagged != ""
+	})
 }

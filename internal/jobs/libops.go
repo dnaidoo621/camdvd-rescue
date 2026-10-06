@@ -375,7 +375,8 @@ func (e *Engine) EditDisc(ctx context.Context, id string, ed DiscEdit) error {
 		}
 	}
 	if retag && d.State == store.Done {
-		return e.Retag(ctx, id)
+		// Written in the background: rewriting every file takes minutes.
+		e.requestRetag(id)
 	}
 	return nil
 }
